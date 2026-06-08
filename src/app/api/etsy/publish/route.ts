@@ -3,7 +3,14 @@ import { prisma } from "@/lib/db/prisma";
 import { toSafeErrorMessage } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
 import { z } from "zod";
-import { withEtsyToken, createDraftListing, uploadListingFile, uploadListingImage, activateListing, updateListing } from "@/lib/integrations/etsy";
+import {
+  getValidEtsyToken,
+  createDraftListing,
+  uploadListingFile,
+  uploadListingImage,
+  activateListing,
+  updateListing,
+} from "@/lib/integrations/etsy";
 import { readFile } from "fs/promises";
 import { join } from "path";
 
@@ -25,9 +32,8 @@ export async function POST(req: NextRequest) {
       const { etsyListingId, fields } = UpdateSchema.parse(body);
       const listing = await prisma.etsyListing.findUnique({ where: { etsyListingId } });
       if (!listing) return NextResponse.json({ success: false, error: "Listing not found" }, { status: 404 });
-      const conn = await prisma.etsyConnection.findUnique({ where: { id: listing.connectionId } });
-      if (!conn) return NextResponse.json({ success: false, error: "Not connected" }, { status: 400 });
-      const updated = await updateListing(conn.accessToken, conn.shopId, etsyListingId, fields as Parameters<typeof updateListing>[3]);
+      const { token, shopId } = await getValidEtsyToken();
+      const updated = await updateListing(token, shopId, etsyListingId, fields as Parameters<typeof updateListing>[3]);
       return NextResponse.json({ success: true, data: updated });
     } catch (error) {
       const { message, status } = toSafeErrorMessage(error);
@@ -41,8 +47,9 @@ export async function POST(req: NextRequest) {
       const { etsyListingId } = z.object({ etsyListingId: z.string() }).parse(body);
       const listing = await prisma.etsyListing.findUnique({ where: { etsyListingId } });
       if (!listing) return NextResponse.json({ success: false, error: "Listing not found" }, { status: 404 });
-      await withEtsyToken(async (token, shopId) => updateListing(token, shopId, etsyListingId, {}));
-      const newExpiry = new Date(Date.now() + 120 * 24 * 60 * 60 * 1000); // ~4 months
+      const { token, shopId } = await getValidEtsyToken();
+      await updateListing(token, shopId, etsyListingId, {});
+      const newExpiry = new Date(Date.now() + 120 * 24 * 60 * 60 * 1000);
       await prisma.etsyListing.update({ where: { etsyListingId }, data: { expiresAt: newExpiry } });
       return NextResponse.json({ success: true, data: { renewed: true } });
     } catch (error) {
@@ -73,53 +80,47 @@ export async function POST(req: NextRequest) {
         if (!product.pdfPath) { await send({ type: "error", message: "Generate PDF first" }); return; }
         if (!product.coverImagePath) { await send({ type: "error", message: "Generate cover image first" }); return; }
 
-        const conn = await prisma.etsyConnection.findFirst({ where: { isActive: true } });
-        if (!conn) { await send({ type: "error", message: "Connect Etsy first" }); return; }
+        // Single token fetch for the entire publish operation
+        const { token, shopId, connectionId } = await getValidEtsyToken();
 
         await send({ type: "progress", step: "Creating draft listing…" });
 
         const optimized = product.optimizedListing as { title?: string; description?: string; tags?: string[] } | null;
-        const title = optimized?.title ?? product.title.slice(0, 140);
+        const title = (optimized?.title ?? product.title).slice(0, 140);
         const description = optimized?.description ?? product.descriptionLong;
         const tags = (optimized?.tags ?? (product.keywords as string[]).slice(0, 13)).map((t: string) => t.slice(0, 20));
 
-        const listing = await withEtsyToken((token, shopId) =>
-          createDraftListing(token, shopId, {
-            title,
-            description,
-            price: 9.99,
-            tags,
-            quantity: 999,
-            is_digital: true,
-            who_made: "i_did",
-            when_made: "2020_2024",
-          })
-        );
+        const listing = await createDraftListing(token, shopId, {
+          title,
+          description,
+          price: 9.99,
+          tags,
+          quantity: 999,
+          is_digital: true,
+          who_made: "i_did",
+          when_made: "2020_2024",
+        });
         const listingId = String(listing.listing_id);
 
         await send({ type: "progress", step: "Uploading PDF…" });
         const pdfBuffer = await readFile(join(process.cwd(), "public", product.pdfPath.replace(/^\//, "")));
-        await withEtsyToken((token, shopId) =>
-          uploadListingFile(token, shopId, listingId, Buffer.from(pdfBuffer), `${product.title}.pdf`)
-        );
+        await uploadListingFile(token, shopId, listingId, Buffer.from(pdfBuffer), `${product.title}.pdf`);
 
         await send({ type: "progress", step: "Uploading cover image…" });
         const imgBuffer = await readFile(join(process.cwd(), "public", product.coverImagePath!.replace(/^\//, "")));
-        await withEtsyToken((token, shopId) =>
-          uploadListingImage(token, shopId, listingId, Buffer.from(imgBuffer), `cover.png`)
-        );
+        await uploadListingImage(token, shopId, listingId, Buffer.from(imgBuffer), "cover.png");
 
         const expiry = new Date(Date.now() + 120 * 24 * 60 * 60 * 1000);
 
         if (!isDraft) {
           await send({ type: "progress", step: "Activating listing…" });
-          await withEtsyToken((token, shopId) => activateListing(token, shopId, listingId));
+          await activateListing(token, shopId, listingId);
         }
 
         await prisma.etsyListing.create({
           data: {
             productId,
-            connectionId: conn.id,
+            connectionId,
             etsyListingId: listingId,
             title,
             description,

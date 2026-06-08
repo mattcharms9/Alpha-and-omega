@@ -89,6 +89,12 @@ export interface CreateListingParams {
   taxonomy_id?: number;
 }
 
+export interface EtsyTokenContext {
+  token: string;
+  shopId: string;
+  connectionId: string;
+}
+
 // ── API helpers ───────────────────────────────────────────────────────────────
 
 async function etsyFetch(
@@ -273,22 +279,25 @@ export async function refreshEtsyToken(refreshToken: string): Promise<EtsyTokenR
   return res.json() as Promise<EtsyTokenResponse>;
 }
 
-// ── Token refresh wrapper ─────────────────────────────────────────────────────
+// ── Token management ──────────────────────────────────────────────────────────
 
-export async function withEtsyToken<T>(
-  fn: (token: string, shopId: string) => Promise<T>
-): Promise<T> {
-  const connection = await prisma.etsyConnection.findFirst({
-    where: { isActive: true },
-  });
+/**
+ * Returns a valid token+shopId for the active Etsy connection, refreshing
+ * automatically if expired. On unrecoverable refresh failure, deactivates
+ * the connection and creates a StrategicAlert.
+ */
+export async function getValidEtsyToken(): Promise<EtsyTokenContext> {
+  const connection = await prisma.etsyConnection.findFirst({ where: { isActive: true } });
   if (!connection) throw new Error("No Etsy shop connected");
 
-  let { accessToken } = connection;
+  if (connection.tokenExpiry > new Date()) {
+    return { token: connection.accessToken, shopId: connection.shopId, connectionId: connection.id };
+  }
 
-  if (connection.tokenExpiry < new Date()) {
-    log({ level: "info", route: "/api/etsy", action: "token-refresh", status: 200 });
+  log({ level: "info", route: "/lib/integrations/etsy", action: "token-refresh", status: 200 });
+
+  try {
     const tokenData = await refreshEtsyToken(connection.refreshToken);
-    accessToken = tokenData.access_token;
     const expiry = new Date(Date.now() + tokenData.expires_in * 1000);
     await prisma.etsyConnection.update({
       where: { id: connection.id },
@@ -298,7 +307,34 @@ export async function withEtsyToken<T>(
         tokenExpiry: expiry,
       },
     });
-  }
+    return { token: tokenData.access_token, shopId: connection.shopId, connectionId: connection.id };
+  } catch (err) {
+    // Deactivate the connection so UI shows "not connected" and prompts reconnect
+    await prisma.etsyConnection.update({
+      where: { id: connection.id },
+      data: { isActive: false },
+    }).catch(() => {});
 
-  return fn(accessToken, connection.shopId.toString());
+    // Non-fatal alert so Matt knows to reconnect
+    await prisma.strategicAlert.create({
+      data: {
+        type: "risk",
+        title: "Etsy Token Expired",
+        body: "Your Etsy access token could not be refreshed. Go to Publishing and reconnect your shop.",
+        actionLabel: "Reconnect",
+        actionHref: "/publishing",
+      },
+    }).catch(() => {});
+
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    throw new Error(`Etsy token refresh failed — please reconnect your shop (${msg})`);
+  }
+}
+
+/** Convenience wrapper for callers that only need a single API call. */
+export async function withEtsyToken<T>(
+  fn: (token: string, shopId: string) => Promise<T>
+): Promise<T> {
+  const { token, shopId } = await getValidEtsyToken();
+  return fn(token, shopId);
 }

@@ -30,7 +30,9 @@ export const proxy = auth(async (req) => {
   }
 
   if (pathname.startsWith("/api/")) {
-    if (PUBLIC_API_PATHS.some((p) => pathname.startsWith(p))) return NextResponse.next();
+    // Match against full path+query so entries like "/api/billing?action=webhook" work correctly
+    const fullPath = `${pathname}${req.nextUrl.search}`;
+    if (PUBLIC_API_PATHS.some((p) => fullPath.startsWith(p) || pathname.startsWith(p))) return NextResponse.next();
     const apiKey = req.headers.get("x-api-key");
     const expectedKey = process.env.API_SECRET_KEY;
     if (!expectedKey) return NextResponse.json({ success: false, error: "Server misconfigured" }, { status: 500 });
