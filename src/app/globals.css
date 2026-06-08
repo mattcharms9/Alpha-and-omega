@@ -1,26 +1,259 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────────────────────────────────────── */
+/* DESIGN SYSTEM — Alpha & Omega                                               */
+/* Light mode · Notion/Linear/Stripe inspired                                 */
+/* ─────────────────────────────────────────────────────────────────────────── */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* ── Backgrounds ── */
+  --bg-page:        #F7F7F5;
+  --bg-surface:     #FFFFFF;
+  --bg-elevated:    #FFFFFF;
+  --bg-subtle:      #F2F1EF;
+  --bg-hover:       #EEEEED;
+  --bg-active:      #E8E7E4;
+
+  /* ── Borders ── */
+  --border-light:   #E8E7E4;
+  --border-medium:  #D4D3CF;
+  --border-strong:  #B8B7B2;
+
+  /* ── Text ── */
+  --text-primary:   #1A1917;
+  --text-secondary: #6B6A65;
+  --text-muted:     #9E9D98;
+  --text-disabled:  #C4C3BE;
+
+  /* ── Brand Accent ── */
+  --accent:         #1A1917;
+  --accent-hover:   #2D2C28;
+
+  /* ── Semantic Colors ── */
+  --emerald:        #16A34A;
+  --emerald-bg:     #F0FDF4;
+  --emerald-border: #BBF7D0;
+  --emerald-dim:    #F0FDF4;   /* backward compat */
+
+  --amber:          #D97706;
+  --amber-bg:       #FFFBEB;
+  --amber-border:   #FDE68A;
+  --amber-dim:      #FFFBEB;   /* backward compat */
+
+  --rose:           #E11D48;
+  --rose-bg:        #FFF1F2;
+  --rose-border:    #FECDD3;
+  --rose-dim:       #FFF1F2;   /* backward compat */
+
+  --blue:           #2563EB;
+  --blue-bg:        #EFF6FF;
+  --blue-border:    #BFDBFE;
+
+  --violet:         #7C3AED;
+  --violet-bg:      #F5F3FF;
+  --violet-border:  #DDD6FE;
+  --violet-dim:     #F5F3FF;   /* backward compat */
+
+  /* ── Score Colors ── */
+  --score-high:     #16A34A;
+  --score-mid:      #D97706;
+  --score-low:      #9E9D98;
+
+  /* ── Typography Scale (CSS vars for use in components) ── */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", sans-serif;
+  --text-xs:   0.6875rem;
+  --text-sm:   0.8125rem;
+  --text-base: 0.9375rem;
+  --text-lg:   1.0625rem;
+  --text-xl:   1.25rem;
+  --text-2xl:  1.5rem;
+  --text-3xl:  1.875rem;
+
+  /* ── Spacing ── */
+  --space-1:  0.25rem;
+  --space-2:  0.5rem;
+  --space-3:  0.75rem;
+  --space-4:  1rem;
+  --space-5:  1.25rem;
+  --space-6:  1.5rem;
+  --space-8:  2rem;
+  --space-10: 2.5rem;
+
+  /* ── Radius ── */
+  --radius-sm:  6px;
+  --radius-md:  8px;
+  --radius-lg:  12px;
+  --radius-xl:  16px;
+
+  /* ── Shadows ── */
+  --shadow-xs:  0 1px 2px rgba(0,0,0,0.05);
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md:  0 4px 6px rgba(0,0,0,0.05), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg:  0 10px 15px rgba(0,0,0,0.06), 0 4px 6px rgba(0,0,0,0.03);
+
+  /* ── Sidebar ── */
+  --sidebar-width:  240px;
+  --sidebar-bg:     #FFFFFF;
+  --sidebar-border: #E8E7E4;
+
+  /* ─────────────────────────────────────────────────────────────────────── */
+  /* BACKWARD-COMPAT ALIASES                                                 */
+  /* Pages referencing old token names still resolve to sensible values.    */
+  /* ─────────────────────────────────────────────────────────────────────── */
+  --bg-void:         #F7F7F5;   /* → --bg-page */
+  --bg-card:         #FFFFFF;   /* → --bg-surface */
+  --border-subtle:   #E8E7E4;   /* → --border-light */
+  --border-default:  #D4D3CF;   /* → --border-medium */
+
+  /* Gold → Amber (closest light-mode equivalent) */
+  --gold:            #D97706;
+  --gold-bright:     #F59E0B;
+  --gold-dim:        #FFFBEB;
+  --gold-glow:       rgba(217,119,6,0.10);
+
+  /* Cyan → Blue */
+  --cyan:            #0891B2;
+  --cyan-dim:        rgba(8,145,178,0.08);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+/* ─── Reset ──────────────────────────────────────────────────────────────── */
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { height: 100%; }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: var(--text-base);
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100%;
+}
+
+/* ─── Scrollbar ───────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-medium); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* ─── Selection ───────────────────────────────────────────────────────────── */
+
+::selection { background: var(--amber-bg); color: var(--amber); }
+
+/* ─── Focus ───────────────────────────────────────────────────────────────── */
+
+:focus-visible {
+  outline: 2px solid var(--amber);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ─── Utility Classes ─────────────────────────────────────────────────────── */
+
+.label {
+  font-size: var(--text-xs);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.glass {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-xs);
+}
+
+.glass-hover {
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.glass-hover:hover {
+  border-color: var(--border-medium);
+  box-shadow: var(--shadow-sm);
+}
+
+.grid-bg {
+  background-image:
+    linear-gradient(rgba(0,0,0,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,0,0,0.04) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+.text-gold-gradient {
+  background: linear-gradient(135deg, var(--gold-bright) 0%, var(--gold) 60%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.glow-gold    { box-shadow: 0 0 20px var(--gold-glow); }
+.glow-emerald { box-shadow: 0 0 16px rgba(22,163,74,0.12); }
+.glow-violet  { box-shadow: 0 0 16px rgba(124,58,237,0.12); }
+
+.gradient-border-gold { position: relative; }
+.gradient-border-gold::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, rgba(217,119,6,0.4), transparent 50%, rgba(124,58,237,0.2));
+  z-index: -1;
+}
+
+.display-xl {
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.number-display {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.fade-up { animation: fadeUp 0.4s ease forwards; }
+
+/* ─── Animations ──────────────────────────────────────────────────────────── */
+
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.75); }
+}
+.pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position:  200% 0; }
+}
+.shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-subtle) 25%,
+    var(--bg-hover)  50%,
+    var(--bg-subtle) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.8s ease-in-out infinite;
+}
+
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+@keyframes rotate-border {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
 }

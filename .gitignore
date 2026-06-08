@@ -39,3 +39,19 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+/src/generated/prisma
+
+# SQLite dev database — NEVER commit these
+prisma/*.db
+prisma/*.db-journal
+*.db
+*.db-journal
+
+# Generated product files (use Vercel Blob in production)
+public/product-pdfs/
+public/product-images/
+public/product-mockups/
+
+# OS files
+Thumbs.db

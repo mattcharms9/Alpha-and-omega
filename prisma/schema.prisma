@@ -1,0 +1,791 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                     String        @id @default(cuid())
+  email                  String        @unique
+  emailVerified          DateTime?
+  passwordHash           String?
+  name                   String?
+  image                  String?
+  plan                   String        @default("free")
+  stripeCustomerId       String?
+  hasCompletedOnboarding Boolean       @default(false)
+  createdAt              DateTime      @default(now())
+  updatedAt              DateTime      @updatedAt
+  subscription           Subscription?
+  accounts               Account[]
+  sessions               Session[]
+
+  @@index([email])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model EmotionalTrend {
+  id                     String    @id @default(cuid())
+  emotion                String
+  painPoint              String
+  description            String
+  intensity              Float
+  monetizationScore      Float
+  evergreenScore         Float
+  audienceLoyalty        Float
+  urgency                Float
+  platforms              Json
+  audienceArchetypes     Json
+  productOpportunities   Json
+  searchVolumeTrend      String
+  competitionLevel       String
+  estimatedAnnualRevenue String
+  tags                   Json
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  deletedAt              DateTime?
+
+  @@index([emotion])
+  @@index([monetizationScore])
+  @@index([createdAt])
+  @@index([deletedAt])
+}
+
+model Product {
+  id                      String           @id @default(cuid())
+  title                   String
+  subtitle                String
+  tagline                 String
+  type                    String
+  targetEmotion           String
+  targetAudience          String
+  audienceArchetype       String
+  pageCount               Int
+  sections                Json
+  psychologicalFramework  String
+  transformationPromise   String
+  emotionalHooks          Json
+  coverConcept            Json
+  marketingAngles         Json
+  pricingStrategy         Json
+  platforms               Json
+  estimatedMonthlyRevenue String
+  competitiveAdvantage    String
+  keywords                Json
+  descriptionShort        String
+  descriptionLong         String
+  status                  String           @default("draft")
+  publishedPlatforms      Json             @default("[]")
+  gumroadProductId        String?
+  gumroadUrl              String?
+  etsyListingUrl          String?
+  coverImagePath          String?
+  pdfPath                 String?
+  optimizedListing        Json?
+  mockupPaths             Json?
+  repositionedFromId      String?
+  etsyListingId           String?
+  listingExpiresAt        DateTime?
+  bundleProductIds        Json?
+  launchCardId            String?
+  lifecycleStage          String           @default("active")
+  lifecycleNote           String?
+  isEvergreen             Boolean          @default(true)
+  peakSeasonEnd           DateTime?
+  lastRevenueAt           DateTime?
+  totalRevenue            Float            @default(0)
+  monthlyRevenue          Float            @default(0)
+  totalSales              Int              @default(0)
+  rating                  Float            @default(0)
+  userId                  String?
+  deletedAt               DateTime?
+  repricingApplications   Int              @default(0)
+  lastRepricedAt          DateTime?
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+  nicheId                 String?
+  contentPieces           ContentPiece[]
+  listingVariants         ListingVariant[]
+  pinQueue                PinQueue[]
+  pinterestPins           PinterestPin[]
+  etsyListings            EtsyListing[]
+
+  @@index([status])
+  @@index([targetEmotion])
+  @@index([type])
+  @@index([createdAt])
+  @@index([userId])
+  @@index([deletedAt])
+}
+
+model ListingVariant {
+  id           String   @id @default(cuid())
+  productId    String
+  platform     String
+  variantLabel String
+  title        String
+  description  String
+  tags         Json
+  price        Float
+  isActive     Boolean  @default(false)
+  isControl    Boolean  @default(false)
+  impressions  Int      @default(0)
+  clicks       Int      @default(0)
+  conversions  Int      @default(0)
+  revenue      Float    @default(0)
+  platformId   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  product      Product  @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([platform])
+  @@index([isActive])
+}
+
+model ContentPiece {
+  id                  String    @id @default(cuid())
+  productId           String?
+  platform            String
+  format              String
+  hook                String
+  body                String
+  callToAction        String
+  hashtags            Json
+  emotionalTrigger    String
+  estimatedViews      String
+  virality            Float
+  conversionPotential Float
+  tone                String
+  visualDirection     String
+  status              String    @default("draft")
+  publishedAt         DateTime?
+  actualViews         Int       @default(0)
+  actualEngagement    Float     @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  deletedAt           DateTime?
+  product             Product?  @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+  @@index([platform])
+  @@index([status])
+  @@index([createdAt])
+  @@index([deletedAt])
+}
+
+model RevenueRecord {
+  id          String   @id @default(cuid())
+  date        DateTime @default(now())
+  platform    String
+  productId   String?
+  revenue     Float
+  sales       Int
+  refunds     Int      @default(0)
+  source      String
+  utmCampaign String?
+  utmContent  String?
+  utmMedium   String?
+  utmSource   String?
+
+  @@index([date])
+  @@index([platform])
+  @@index([productId])
+  @@index([utmSource])
+}
+
+model Portfolio {
+  id                String   @id @default(cuid())
+  name              String
+  emotionalCategory String
+  description       String
+  totalRevenue      Float    @default(0)
+  monthlyRevenue    Float    @default(0)
+  productCount      Int      @default(0)
+  audienceSize      Int      @default(0)
+  growthRate        Float    @default(0)
+  status            String   @default("active")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
+model Brand {
+  id                      String         @id @default(cuid())
+  brandName               String
+  tagline                 String
+  emotionalCategory       String
+  targetEmotion           String
+  audienceArchetype       String
+  jungianArchetype        String
+  categoryFrame           String
+  uniqueValueProposition  String
+  emotionalPromise        String
+  brandPersonality        Json
+  brandVoice              String
+  brandScore              Int            @default(0)
+  defensibilityScore      Int            @default(0)
+  estimatedMonthlyRevenue String
+  competitiveMoat         String
+  positioning             Json
+  audiencePsychology      Json
+  offerStack              Json
+  productLadder           Json
+  messagingFramework      Json
+  funnelMap               Json
+  contentStrategy         Json
+  visualIdentity          Json
+  launchRoadmap           Json
+  revenueProjection       Json
+  keywords                Json
+  status                  String         @default("draft")
+  createdAt               DateTime       @default(now())
+  updatedAt               DateTime       @updatedAt
+  userId                  String?
+  deletedAt               DateTime?
+  bankedSignals           BankedSignal[]
+  campaigns               Campaign[]
+
+  @@index([userId])
+  @@index([deletedAt])
+}
+
+model Campaign {
+  id                 String    @id @default(cuid())
+  brandId            String
+  name               String
+  type               String
+  status             String    @default("draft")
+  emotionalTerritory String
+  targetAudience     String
+  primaryPlatform    String
+  contentPillars     String
+  messagingFramework String
+  kpis               String
+  budget             Float     @default(0)
+  actualSpend        Float     @default(0)
+  impressions        Int       @default(0)
+  clicks             Int       @default(0)
+  conversions        Int       @default(0)
+  revenue            Float     @default(0)
+  startDate          DateTime?
+  endDate            DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  userId             String?
+  brand              Brand     @relation(fields: [brandId], references: [id])
+
+  @@index([userId])
+}
+
+model EmotionalSignal {
+  id                String   @id @default(cuid())
+  source            String
+  niche             String
+  emotion           String
+  signal            String
+  rawText           String
+  sentiment         Float
+  intensity         Float
+  urgencyScore      Float
+  monetizationScore Float
+  audienceSize      String
+  platform          String
+  engagementRate    Float    @default(0)
+  viralPotential    Float    @default(0)
+  actionableInsight String
+  relatedKeywords   String
+  collectedAt       DateTime @default(now())
+  createdAt         DateTime @default(now())
+}
+
+model PerformanceMetric {
+  id          String   @id @default(cuid())
+  entityType  String
+  entityId    String
+  metricName  String
+  metricValue Float
+  unit        String
+  period      String
+  periodStart DateTime
+  periodEnd   DateTime
+  source      String
+  metadata    String   @default("{}")
+  createdAt   DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([metricName, periodStart])
+}
+
+model BankedSignal {
+  id                     String    @id
+  emotion                String
+  painPoint              String
+  description            String
+  intensity              Float
+  monetizationScore      Float
+  evergreenScore         Float
+  audienceLoyalty        Float
+  urgency                Float
+  platforms              Json
+  audienceArchetypes     Json
+  productOpportunities   Json
+  searchVolumeTrend      String
+  competitionLevel       String
+  estimatedAnnualRevenue String
+  tags                   Json
+  freshnessScore         Float     @default(100)
+  rarityScore            Float     @default(50)
+  opportunityScore       Float     @default(0)
+  territory              String    @default("")
+  activatedAt            DateTime?
+  connectedBrandId       String?
+  collectedAt            DateTime  @default(now())
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+  userId                 String?
+  deletedAt              DateTime?
+  connectedBrand         Brand?    @relation(fields: [connectedBrandId], references: [id])
+
+  @@index([emotion])
+  @@index([opportunityScore])
+  @@index([userId])
+  @@index([deletedAt])
+}
+
+model StrategicAlert {
+  id          String   @id @default(cuid())
+  type        String
+  title       String
+  body        String
+  actionLabel String   @default("")
+  actionHref  String   @default("")
+  read        Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([read, createdAt])
+}
+
+model CompetitorProfile {
+  id                       String   @id @default(cuid())
+  brandName                String
+  niche                    String
+  emotionalTerritory       String
+  jungianArchetype         String
+  primaryPlatforms         String
+  estimatedMonthlyRevenue  String
+  estimatedMonthlySessions String
+  pricingStrategy          String
+  averageOrderValue        String
+  positioning              String
+  offerAnalysis            String
+  contentStrategy          String
+  psychologyAnalysis       String
+  weaknesses               String
+  threats                  String
+  opportunityScore         Int      @default(0)
+  threatLevel              String   @default("medium")
+  keyTakeaways             String
+  lastAnalyzedAt           DateTime @default(now())
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
+
+model DailyBatchLog {
+  id                String   @id @default(cuid())
+  date              String   @unique
+  batchesRun        Int      @default(0)
+  productsGenerated Int      @default(0)
+  productsPublished Int      @default(0)
+  targetProducts    Int      @default(20)
+  emotionalThemes   Json
+  revenue           Float    @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([date])
+}
+
+model PinterestConnection {
+  id              String    @id @default(cuid())
+  userId          String?
+  accessToken     String
+  refreshToken    String?
+  tokenExpiry     DateTime?
+  pinterestUserId String
+  username        String
+  boardId         String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([userId])
+}
+
+model PinterestPin {
+  id             String   @id @default(cuid())
+  productId      String
+  pinId          String
+  pinUrl         String
+  boardId        String
+  title          String
+  description    String
+  destinationUrl String
+  imageUrl       String
+  saves          Int      @default(0)
+  clicks         Int      @default(0)
+  impressions    Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  product        Product  @relation(fields: [productId], references: [id])
+
+  @@index([productId])
+}
+
+model AccountabilitySettings {
+  id              String   @id @default("singleton")
+  dailyTarget     Int      @default(20)
+  reminderEnabled Boolean  @default(true)
+  reminderHour    Int      @default(21)
+  reminderMinute  Int      @default(0)
+  timezone        String   @default("America/Los_Angeles")
+  smsEnabled      Boolean  @default(true)
+  pushEnabled     Boolean  @default(true)
+  streakGoal      Int      @default(30)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model DailyStreak {
+  id             String    @id @default(cuid())
+  date           String    @unique
+  productsPosted Int       @default(0)
+  targetMet      Boolean   @default(false)
+  reminderSent   Boolean   @default(false)
+  reminderSentAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([date])
+  @@index([targetMet])
+}
+
+model PushSubscription {
+  id        String   @id @default(cuid())
+  endpoint  String   @unique
+  p256dh    String
+  auth      String
+  userAgent String?
+  createdAt DateTime @default(now())
+}
+
+model EmpireConfig {
+  id                   String    @id @default("singleton")
+  lastBrief            String?
+  lastBriefAt          DateTime?
+  updatedAt            DateTime  @updatedAt
+  lastSeasonalAt       DateTime?
+  lastSeasonalCalendar String?
+  lastAgentRunAt       DateTime?
+  lastAgentRunCost     Float?
+  totalAgentRunCost    Float     @default(0)
+}
+
+model NicheResearch {
+  id                       String    @id @default(cuid())
+  parentEmotion            String
+  nicheName                String
+  nicheSlug                String
+  oneLiner                 String
+  opportunityScore         Float
+  competitionLevel         String
+  evergreenScore           Float
+  trendingScore            Float
+  monetizationScore        Float
+  peakMonths               Json
+  currentSeasonalRelevance Float
+  urgency                  String
+  audience                 Json
+  topProduct               Json
+  allFormats               Json
+  etsyIntel                Json
+  contentAngles            Json
+  relatedNiches            Json
+  competitorGaps           Json
+  whyNowRationale          String
+  status                   String    @default("researched")
+  lastCheckedAt            DateTime?
+  competitionScore         Int?
+  productsGenerated        Int       @default(0)
+  totalRevenue             Float     @default(0)
+  notes                    String    @default("")
+  isFavorited              Boolean   @default(false)
+  lastUsedAt               DateTime?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+
+  @@index([parentEmotion])
+  @@index([opportunityScore])
+  @@index([status])
+  @@index([isFavorited])
+  @@index([competitionLevel])
+}
+
+model PinQueue {
+  id           String   @id @default(cuid())
+  productId    String
+  pinContent   Json
+  scheduledFor DateTime
+  platform     String
+  status       String   @default("queued")
+  pinId        String?
+  error        String?
+  createdAt    DateTime @default(now())
+  product      Product  @relation(fields: [productId], references: [id])
+
+  @@index([scheduledFor])
+  @@index([status])
+  @@index([productId])
+}
+
+model KeywordCache {
+  id          String   @id @default(cuid())
+  keyword     String   @unique
+  metricsJson Json
+  source      String
+  expiresAt   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([keyword])
+  @@index([expiresAt])
+}
+
+model ScanCache {
+  id         String   @id @default(cuid())
+  scanType   String
+  resultJson Json
+  createdAt  DateTime @default(now())
+  expiresAt  DateTime
+
+  @@index([scanType])
+  @@index([createdAt])
+}
+
+model IntelligenceInsight {
+  id             String   @id @default(cuid())
+  discoveredAt   DateTime @default(now())
+  insightType    String   // hot_niche | saturating_niche | price_discovery | audience_finding | format_insight
+  content        String
+  supportingData Json
+  actionTaken    Boolean  @default(false)
+  productId      String?
+  revenue        Float    @default(0)
+  createdAt      DateTime @default(now())
+
+  @@index([insightType])
+  @@index([actionTaken])
+  @@index([discoveredAt])
+}
+
+model EtsySearchCache {
+  id        String   @id @default(cuid())
+  cacheKey  String   @unique
+  data      Json
+  fetchedAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([cacheKey])
+  @@index([expiresAt])
+}
+
+model EtsyConnection {
+  id           String      @id @default(cuid())
+  shopId       String      @unique
+  shopName     String
+  shopUrl      String
+  accessToken  String
+  refreshToken String
+  tokenExpiry  DateTime
+  currencyCode String      @default("USD")
+  isActive     Boolean     @default(true)
+  connectedAt  DateTime    @default(now())
+  lastSyncAt   DateTime?
+
+  listings     EtsyListing[]
+
+  @@index([shopId])
+}
+
+model EtsyListing {
+  id              String         @id @default(cuid())
+  productId       String
+  connectionId    String
+  etsyListingId   String         @unique
+  title           String
+  description     String
+  price           Float
+  tags            Json
+  status          String         @default("draft")
+  views           Int            @default(0)
+  favorites       Int            @default(0)
+  sales           Int            @default(0)
+  revenue         Float          @default(0)
+  pdfFileId       String?
+  coverImageId    String?
+  expiresAt       DateTime?
+  publishedAt     DateTime?
+  lastSyncAt      DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  product         Product        @relation(fields: [productId], references: [id])
+  connection      EtsyConnection @relation(fields: [connectionId], references: [id])
+
+  @@index([productId])
+  @@index([status])
+  @@index([expiresAt])
+  @@index([connectionId])
+}
+
+model NurtureRecord {
+  id          String    @id @default(cuid())
+  email       String
+  productId   String
+  day0SentAt  DateTime?
+  day3SentAt  DateTime?
+  day7SentAt  DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([email, productId])
+  @@index([email])
+}
+
+model Subscription {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  stripeCustomerId  String   @unique
+  stripePriceId     String
+  status            String
+  plan              String   @default("free")
+  currentPeriodEnd  DateTime
+  cancelAtPeriodEnd Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  user              User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([status])
+}
+
+model DailyQueue {
+  id           String       @id @default(cuid())
+  date         String       @unique
+  status       String       @default("pending")
+  generatedAt  DateTime     @default(now())
+  emailSentAt  DateTime?
+  agentRunLog  Json?
+  cards        LaunchCard[]
+
+  @@index([date])
+  @@index([status])
+}
+
+model LaunchCard {
+  id               String     @id @default(cuid())
+  queueId          String
+  queue            DailyQueue @relation(fields: [queueId], references: [id])
+  position         Int
+
+  productTitle     String
+  productFormat    String
+  targetAudience   String
+  emotionalHook    String
+  primaryKeyword   String
+  suggestedPrice   Float
+
+  etsyListingCount Int        @default(0)
+  etsyAvgPrice     Float      @default(0)
+  competitionLevel String     @default("medium")
+  trendingScore    Int        @default(50)
+  opportunityScore Int        @default(50)
+  confidenceLevel  String     @default("medium")
+
+  whyNow           String
+  whyYou           String
+  expectedRevenue  String
+  agentReasoning   Json
+
+  status           String     @default("pending")
+  decidedAt        DateTime?
+
+  buildStatus      String     @default("queued")
+  buildStartedAt   DateTime?
+  buildCompletedAt DateTime?
+  productId        String?
+  etsyListingId    String?
+  publishedAt      DateTime?
+  failureReason    String?
+  buildCompleteness Int       @default(0)
+  stagesCompleted  Json?
+  stagesFailed     Json?
+
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  @@index([queueId])
+  @@index([status])
+  @@index([buildStatus])
+}
+
+model AgentRunLog {
+  id           String    @id @default(cuid())
+  queueId      String
+  agentName    String
+  status       String    @default("running")
+  inputData    Json
+  outputData   Json?
+  tokensUsed   Int       @default(0)
+  costEstimate Float     @default(0)
+  durationMs   Int       @default(0)
+  errorMessage String?
+  startedAt    DateTime  @default(now())
+  completedAt  DateTime?
+
+  @@index([queueId])
+  @@index([agentName])
+}

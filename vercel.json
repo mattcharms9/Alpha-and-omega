@@ -1,0 +1,26 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "functions": {
+    "src/app/api/products/batch/route.ts": { "maxDuration": 120 },
+    "src/app/api/launch-queue/route.ts": { "maxDuration": 120 },
+    "src/app/api/cron/run-agent-queue/route.ts": { "maxDuration": 300 },
+    "src/app/api/generate-image/route.ts": { "maxDuration": 60 },
+    "src/app/api/pdf/route.ts": { "maxDuration": 60 }
+  },
+  "crons": [
+    { "path": "/api/cron/daily-brief", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/process-pin-queue", "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/daily-reminder", "schedule": "0 * * * *" },
+    { "path": "/api/cron/close-day", "schedule": "59 23 * * *" },
+    { "path": "/api/cron/weekly-report", "schedule": "0 9 * * 0" },
+    { "path": "/api/cron/sync-etsy", "schedule": "0 6 * * *" },
+    { "path": "/api/cron/nurture-sequences", "schedule": "0 10 * * *" },
+    { "path": "/api/cron/lifecycle-scan", "schedule": "0 5 * * *" },
+    { "path": "/api/cron/resolve-ab-tests", "schedule": "0 7 * * *" },
+    { "path": "/api/cron/competitor-monitor", "schedule": "0 4 * * 1" },
+    { "path": "/api/cron/run-agent-queue", "schedule": "0 2 * * *" }
+  ]
+}

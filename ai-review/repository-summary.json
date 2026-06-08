@@ -1,0 +1,228 @@
+{
+  "repository": {
+    "name": "Alpha & Omega",
+    "packageName": "alpha-omega",
+    "version": "0.1.0",
+    "description": "Autonomous AI-native publishing and emotional utility platform",
+    "status": "active_development",
+    "lastReview": "2026-05-27",
+    "sessionsCompleted": 12,
+    "devPort": 3090
+  },
+  "technology": {
+    "framework": "Next.js 16.2.6 (App Router)",
+    "language": "TypeScript 5 (strict mode)",
+    "runtime": "Node.js (server) + Browser (client)",
+    "css": "Tailwind CSS v4 + CSS custom properties design system",
+    "database": {
+      "dev": "SQLite via @prisma/adapter-better-sqlite3",
+      "prod": "PostgreSQL (schema ready — Prisma supports both via adapter swap)",
+      "orm": "Prisma 7.8.0",
+      "note": "Prisma 7 uses prisma.config.ts for datasource URL, not schema.prisma. Dev uses better-sqlite3 adapter."
+    },
+    "ai": {
+      "provider": "Anthropic",
+      "sdk": "@anthropic-ai/sdk 0.98.0",
+      "defaultModel": "claude-sonnet-4-6",
+      "modelConfigurable": true,
+      "envVar": "ANTHROPIC_MODEL",
+      "promptCaching": true,
+      "retryLogic": true,
+      "structuredCostLogging": true,
+      "engineCount": 16
+    },
+    "imageGeneration": {
+      "provider": "OpenAI",
+      "model": "dall-e-3",
+      "sdk": "openai 6.x"
+    },
+    "email": {
+      "provider": "Resend",
+      "sdk": "resend 6.x",
+      "uses": ["sale alerts", "daily brief", "buyer email list"]
+    },
+    "auth": {
+      "provider": "NextAuth v5 beta",
+      "strategy": "JWT (stateless)",
+      "providers": ["credentials"],
+      "prismaAdapter": false,
+      "note": "Foundation only — no login/signup UI pages yet"
+    },
+    "stateManagement": {
+      "local": "React useState",
+      "crossEngine": "Zustand (active-product store, active-niche store, Products → Content → Publishing flow)"
+    },
+    "pdf": {
+      "library": "@react-pdf/renderer",
+      "version": "4.5.1",
+      "templates": ["knowledge-guide", "bingo-card", "squares-grid", "how-well-do-you-know"],
+      "note": "Templates built; API route pending (TD-018)"
+    }
+  },
+  "dependencies": {
+    "runtime": [
+      "@anthropic-ai/sdk",
+      "@prisma/adapter-better-sqlite3",
+      "@prisma/client",
+      "@react-pdf/renderer",
+      "better-sqlite3",
+      "class-variance-authority",
+      "clsx",
+      "framer-motion",
+      "lru-cache",
+      "lucide-react",
+      "next",
+      "next-auth",
+      "openai",
+      "react",
+      "react-dom",
+      "recharts",
+      "resend",
+      "tailwind-merge",
+      "twilio",
+      "web-push",
+      "zod",
+      "zustand"
+    ],
+    "dev": [
+      "@tailwindcss/postcss",
+      "@types/node",
+      "@types/react",
+      "@types/react-dom",
+      "dotenv",
+      "eslint",
+      "eslint-config-next",
+      "prisma",
+      "tailwindcss",
+      "typescript"
+    ]
+  },
+  "architecture": {
+    "style": "Monolithic full-stack Next.js",
+    "pattern": "Feature-based with AI engine abstraction layer",
+    "authMiddleware": "src/proxy.ts (NOT src/middleware.ts)",
+    "apiStyle": "REST-like with action dispatch (?action=verb)",
+    "apiVersioning": "/api/v1/* rewrites to /api/* via proxy.ts",
+    "sseStreaming": "TransformStream in /api/products/batch for parallel batch generation",
+    "stateManagement": "Local useState + Zustand cross-engine store"
+  },
+  "securityStatus": {
+    "authentication": "partial — x-api-key middleware on all routes",
+    "rateLimiting": true,
+    "csrfProtection": "partial — API key header provides some mitigation",
+    "inputValidation": true,
+    "errorSanitization": true,
+    "contentSecurityPolicy": false,
+    "gumroadWebhookHmac": true,
+    "cronSecretVerification": true,
+    "promptCachingEnabled": true
+  },
+  "integrations": {
+    "gumroad": "live — create, publish, unpublish, sync, webhook (HMAC-SHA256 verified)",
+    "pinterest": "live — OAuth, pin creation, queue, analytics",
+    "openai": "live — DALL-E 3 cover image generation",
+    "resend": "live — sale alerts + daily brief + buyer email list",
+    "twilio": "live — SMS accountability reminders",
+    "webpush": "live — browser push notifications via VAPID",
+    "etsy": "not built — critical gap (primary revenue channel)",
+    "stripe": "not built — planned for SaaS billing"
+  },
+  "pages": [
+    { "route": "/", "name": "Dashboard", "status": "complete", "type": "client" },
+    { "route": "/intelligence", "name": "Emotional Intelligence Engine", "status": "complete", "type": "client" },
+    { "route": "/brands", "name": "Brand Builder", "status": "complete", "type": "client" },
+    { "route": "/signals", "name": "Signal Bank", "status": "complete", "type": "client" },
+    { "route": "/products", "name": "Product Engine (batch-first)", "status": "complete", "type": "client" },
+    { "route": "/content", "name": "Content Engine", "status": "complete", "type": "client" },
+    { "route": "/portfolio", "name": "Portfolio Intelligence", "status": "complete_rsc", "type": "rsc" },
+    { "route": "/publishing", "name": "Publishing Engine + Pinterest", "status": "complete", "type": "client" },
+    { "route": "/settings", "name": "Settings", "status": "partial", "type": "client" },
+    { "route": "/niche-research", "name": "Niche Research Engine", "status": "complete", "type": "client" },
+    { "route": "/knowledge", "name": "Knowledge Products Engine", "status": "complete", "type": "client" },
+    { "route": "/games", "name": "Games & Party Sheets Engine", "status": "complete", "type": "client" }
+  ],
+  "apiRoutes": [
+    { "path": "/api/intelligence", "method": "GET/POST", "actions": ["scan", "score", "seasonal"], "authenticated": true, "rateLimited": true },
+    { "path": "/api/signals", "method": "POST", "actions": ["bank", "activate", "territory-map", "update-scores"], "authenticated": true, "rateLimited": true },
+    { "path": "/api/market-research", "method": "POST", "authenticated": true, "rateLimited": true },
+    { "path": "/api/competitors", "method": "POST", "actions": ["analyze", "list", "delete"], "authenticated": true, "rateLimited": true },
+    { "path": "/api/products", "method": "POST", "actions": ["generate", "variants", "batch-plan"], "authenticated": true, "rateLimited": true },
+    { "path": "/api/products/batch", "method": "POST", "sse": true, "authenticated": true, "rateLimited": true, "rateLimit": "3/min" },
+    { "path": "/api/products/daily-log", "method": "GET", "authenticated": true },
+    { "path": "/api/content", "method": "POST", "actions": ["batch", "hooks"], "authenticated": true, "rateLimited": true },
+    { "path": "/api/generate-image", "method": "POST", "authenticated": true, "rateLimited": true },
+    { "path": "/api/brands", "method": "POST", "actions": ["generate", "list", "delete", "set-active"], "authenticated": true },
+    { "path": "/api/variants", "method": "POST", "actions": ["generate", "list", "record-impression", "record-click", "declare-winner"], "authenticated": true },
+    { "path": "/api/gumroad", "method": "POST", "actions": ["create", "publish", "unpublish", "sync", "products"], "authenticated": true },
+    { "path": "/api/gumroad/webhook", "method": "POST", "authenticated": false, "note": "HMAC-SHA256 verified" },
+    { "path": "/api/pinterest", "method": "GET/POST", "actions": ["connect", "callback", "status", "boards", "set-board", "disconnect"], "authenticated": "partial" },
+    { "path": "/api/pinterest/pin", "method": "POST", "actions": ["create", "auto-pin", "queue", "sync-analytics"], "authenticated": true },
+    { "path": "/api/pinterest/queue", "method": "GET", "authenticated": true },
+    { "path": "/api/portfolio", "method": "GET", "authenticated": true },
+    { "path": "/api/performance", "method": "POST", "actions": ["record", "query"], "authenticated": true },
+    { "path": "/api/empire", "method": "GET", "actions": ["state", "brief"], "authenticated": true, "rateLimited": true },
+    { "path": "/api/niche-expansion", "method": "GET/POST", "actions": ["expand", "drill", "save", "update", "delete", "list", "get", "stats"], "authenticated": true, "rateLimited": true },
+    { "path": "/api/knowledge", "method": "POST", "actions": ["scan", "generate", "audience-scan"], "authenticated": true, "rateLimited": true },
+    { "path": "/api/games", "method": "GET/POST", "actions": ["generate", "niches", "calendar"], "authenticated": true, "rateLimited": true },
+    { "path": "/api/accountability", "method": "GET/POST", "actions": ["status", "streak", "calendar", "save-settings", "test-sms", "test-push"], "authenticated": true },
+    { "path": "/api/push", "method": "POST", "actions": ["subscribe", "unsubscribe", "test"], "authenticated": true },
+    { "path": "/api/rules/repricing", "method": "GET/POST", "actions": ["evaluate", "apply"], "authenticated": true },
+    { "path": "/api/auth/[...nextauth]", "method": "GET/POST", "authenticated": false, "note": "NextAuth handler" },
+    { "path": "/api/cron/daily-brief", "method": "GET", "authenticated": false, "cronSecret": true, "schedule": "0 8 * * *" },
+    { "path": "/api/cron/process-pin-queue", "method": "GET", "authenticated": false, "cronSecret": true, "schedule": "*/30 * * * *" },
+    { "path": "/api/cron/daily-reminder", "method": "GET", "authenticated": false, "cronSecret": true, "schedule": "0 * * * *" },
+    { "path": "/api/cron/close-day", "method": "GET", "authenticated": false, "cronSecret": true, "schedule": "59 23 * * *" },
+    { "path": "/api/cron/weekly-report", "method": "GET", "authenticated": false, "cronSecret": true, "schedule": "0 9 * * 0" }
+  ],
+  "databaseModels": [
+    { "name": "User", "purpose": "Auth user (NextAuth, JWT strategy)", "issues": [] },
+    { "name": "EmotionalTrend", "purpose": "Discovered market trends with scores", "softDelete": true, "issues": [] },
+    { "name": "Product", "purpose": "Generated product blueprints", "softDelete": true, "issues": [] },
+    { "name": "ContentPiece", "purpose": "Social media content pieces", "relations": ["Product (optional)"], "softDelete": true, "issues": [] },
+    { "name": "RevenueRecord", "purpose": "Sales and revenue tracking by platform", "issues": [] },
+    { "name": "Portfolio", "purpose": "Aggregate portfolio tracking", "issues": [] },
+    { "name": "Brand", "purpose": "Full Brand Bible with strategy fields", "softDelete": true, "issues": [] },
+    { "name": "Campaign", "purpose": "Campaigns linked to brands", "issues": [] },
+    { "name": "EmotionalSignal", "purpose": "Raw market signals from scanning", "issues": [] },
+    { "name": "BankedSignal", "purpose": "Curated signals with freshness/opportunity scores", "softDelete": true, "issues": [] },
+    { "name": "StrategicAlert", "purpose": "Dashboard alerts (sale, opportunity, risk)", "issues": [] },
+    { "name": "CompetitorProfile", "purpose": "Competitor analysis snapshots", "issues": [] },
+    { "name": "PerformanceMetric", "purpose": "Generic entity-based metric tracking", "issues": [] },
+    { "name": "ListingVariant", "purpose": "A/B test variants for product listings", "issues": [] },
+    { "name": "DailyBatchLog", "purpose": "Daily batch generation progress tracker", "uniqueConstraint": "date", "issues": [] },
+    { "name": "PinterestConnection", "purpose": "Pinterest OAuth tokens + board ID", "issues": ["no_token_refresh"] },
+    { "name": "PinterestPin", "purpose": "Pin records with analytics", "issues": [] },
+    { "name": "PinQueue", "purpose": "Scheduled pins with status lifecycle", "issues": [] },
+    { "name": "EmpireConfig", "purpose": "Empire brief TTL cache — lastBrief + lastBriefAt singleton (@id default: singleton)", "issues": [] },
+    { "name": "NicheResearch", "purpose": "Saved niche research library with scoring, audience profiles, Etsy intel", "issues": [] },
+    { "name": "DailyStreak", "purpose": "Daily target hit/miss record for streak calculation", "uniqueConstraint": "date", "issues": [] },
+    { "name": "AccountabilitySettings", "purpose": "User reminder preferences — target, hour, timezone, SMS/push toggles", "id": "singleton", "issues": [] },
+    { "name": "PushSubscription", "purpose": "Browser web-push VAPID subscriptions", "uniqueConstraint": "endpoint", "issues": [] }
+  ],
+  "codeQuality": {
+    "typescriptStrict": true,
+    "zodValidation": true,
+    "eslintConfigured": true,
+    "testSuite": false,
+    "errorBoundaries": true,
+    "structuredLogging": true,
+    "promptCaching": true,
+    "retryLogic": true
+  },
+  "buildInfo": {
+    "buildCommand": "npm run build",
+    "devCommand": "npm run dev --port 3090",
+    "buildStatus": "passing",
+    "pageCount": 45,
+    "typescriptErrors": 0,
+    "lastBuildDate": "2026-05-27",
+    "lastBuildSession": 12
+  },
+  "openGaps": {
+    "critical": ["TD-018_pdf_api_route_pending", "TD-019_no_etsy_integration"],
+    "high": ["TD-006_no_job_queue"],
+    "medium": ["TD-016_rate_limiter_in_memory", "TD-017_nextauth_no_db_adapter", "SEC-004_no_csrf", "SEC-008_no_csp"],
+    "low": ["TD-013_pinterest_image_hosting", "SEC-013_pinterest_token_refresh", "TD-022_games_calendar_date_drift"]
+  },
+  "sanitizationNote": "This file contains zero secrets, API keys, tokens, credentials, database passwords, or sensitive data. All infrastructure details are structural descriptions only."
+}
