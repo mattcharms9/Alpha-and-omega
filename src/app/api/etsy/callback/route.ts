@@ -49,23 +49,43 @@ export async function GET(req: NextRequest) {
       access_token: string; refresh_token: string; expires_in: number; user_id?: string | number;
     };
 
-    // Etsy access tokens are JWTs — decode payload to get user_id without an extra API call
-    const userId = tokenData.user_id ?? jwtUserId(tokenData.access_token);
-    if (!userId) return redirectWithError(base, "Could not identify Etsy user from token");
+    console.log("[etsy callback] token exchange success, fetching user identity...");
+
+    // Etsy v3 requires BOTH headers on every request
+    const etsyHeaders = {
+      Authorization: `Bearer ${tokenData.access_token}`,
+      "x-api-key": clientId,
+    };
+
+    // Primary: /users/me — works with profile_r + email_r scopes
+    // Fallback: decode user_id from token payload if Etsy embeds it
+    let userId: string | number | undefined = tokenData.user_id ?? jwtUserId(tokenData.access_token);
+
+    if (!userId) {
+      const meRes = await fetch("https://openapi.etsy.com/v3/application/users/me", { headers: etsyHeaders });
+      if (!meRes.ok) {
+        const errText = await meRes.text().catch(() => "");
+        console.error("[etsy callback] /users/me failed:", meRes.status, errText);
+        return redirectWithError(base, `Could not identify Etsy user (${meRes.status}: ${errText.slice(0, 120)})`);
+      }
+      const meData = await meRes.json() as { user_id?: string | number; login_name?: string };
+      userId = meData.user_id;
+      console.log("[etsy callback] user identified:", meData.user_id, meData.login_name);
+    } else {
+      console.log("[etsy callback] user_id from token:", userId);
+    }
+
+    if (!userId) return redirectWithError(base, "Could not identify Etsy user — no user_id in token or /users/me response");
 
     const shopsRes = await fetch(
       `https://openapi.etsy.com/v3/application/users/${userId}/shops`,
-      {
-        headers: {
-          "x-api-key": clientId,
-          Authorization: `Bearer ${tokenData.access_token}`,
-        },
-      }
+      { headers: etsyHeaders }
     );
 
     if (!shopsRes.ok) {
       const errText = await shopsRes.text().catch(() => "");
-      return redirectWithError(base, `Could not fetch shop info (${shopsRes.status}${errText ? `: ${errText.slice(0, 120)}` : ""})`);
+      console.error("[etsy callback] /users/{id}/shops failed:", shopsRes.status, errText);
+      return redirectWithError(base, `Could not fetch shop info (${shopsRes.status}: ${errText.slice(0, 120)})`);
     }
 
     type ShopObj = { shop_id: number; shop_name: string; url: string; currency_code: string };
@@ -78,6 +98,8 @@ export async function GET(req: NextRequest) {
           ? shopsData.results[0]
           : undefined;
     if (!shop) return redirectWithError(base, "No Etsy shop found on this account");
+
+    console.log("[etsy callback] shop identified:", shop.shop_id, shop.shop_name);
 
     const expiry = new Date(Date.now() + tokenData.expires_in * 1000);
 
@@ -103,6 +125,7 @@ export async function GET(req: NextRequest) {
       },
     });
 
+    console.log("[etsy callback] connection saved, redirecting to /publishing");
     return NextResponse.redirect(`${base}/publishing?connected=etsy`);
   } catch {
     return redirectWithError(base, "OAuth flow failed");

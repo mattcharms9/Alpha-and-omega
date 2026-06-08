@@ -8,6 +8,7 @@ export const ETSY_SCOPES = [
   "transactions_r",
   "shops_r",
   "profile_r",
+  "email_r",
 ].join(" ");
 
 // ── PKCE helpers ─────────────────────────────────────────────────────────────
