@@ -4,6 +4,7 @@ import { useState, useCallback } from "react";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X } from "lucide-react";
+import { SessionProvider } from "next-auth/react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { SidebarContext } from "@/components/layout/sidebar-context";
 import { CommandPalette } from "@/components/layout/CommandPalette";
@@ -18,6 +19,7 @@ export function ClientShell({ children }: { children: React.ReactNode }) {
   const closeMobile = useCallback(() => setMobileOpen(false), []);
 
   return (
+    <SessionProvider>
     <SidebarContext.Provider value={{ closeMobile }}>
       {/* Desktop sidebar (hidden on mobile) */}
       <div className="sidebar-desktop">
@@ -116,5 +118,6 @@ export function ClientShell({ children }: { children: React.ReactNode }) {
         }
       `}</style>
     </SidebarContext.Provider>
+    </SessionProvider>
   );
 }
