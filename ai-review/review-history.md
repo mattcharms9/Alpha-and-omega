@@ -4,6 +4,60 @@ Chronological log of all review sessions with findings and resolutions.
 
 ---
 
+## Review Session 023 — Etsy OAuth Comprehensive Repair
+**Date:** 2026-06-08
+**Focus:** Full diagnostic + fix of broken Etsy OAuth PKCE flow; publish pipeline token issues
+**Files Changed:** 6 files
+**Build Status:** ✅ Passing — 0 TypeScript errors
+
+### Root Causes Found
+1. Cookie-based PKCE verifier storage failed in all environments (Secure flag, SameSite, cross-env routing)
+2. `users/me/shops` endpoint doesn't exist in Etsy API v3 — correct path is `/users/{user_id}/shops`
+3. No way to get `user_id` without an extra API call — fixed by decoding it from the JWT access token
+4. `redirectWithError` used `NEXT_PUBLIC_APP_URL` env var — sent errors to wrong host (localhost vs Vercel)
+5. Publish route called `withEtsyToken` 4× per operation — 4 DB round-trips, 4 token checks
+6. `update`/`renew` actions in publish route read `conn.accessToken` directly — bypassed token refresh
+7. Token refresh failure threw silently — no alert, connection stayed "active" showing stale state
+8. Proxy `PUBLIC_API_PATHS` entries with `?action=` never matched — `pathname` strips query strings
+
+### Key Changes
+- `src/lib/etsy-state.ts`: Replaced HMAC-only state with AES-256-GCM encrypted state — verifier travels in the state token, zero cookies needed
+- `src/app/api/etsy/callback/route.ts`: JWT decode for user_id; correct shop endpoint; error redirects from `req.url` origin
+- `src/lib/integrations/etsy.ts`: Added `getValidEtsyToken()` returning `{token, shopId, connectionId}`; on refresh failure deactivates connection + creates StrategicAlert; `withEtsyToken` delegates to it
+- `src/lib/services/etsy-publish-service.ts`: Single `getValidEtsyToken()` call for entire publish operation
+- `src/app/api/etsy/publish/route.ts`: Same — one token fetch per request; fix `update`/`renew` stale-token bug
+- `src/proxy.ts`: Fix query-param exemptions — check `fullPath = pathname+search` so `?action=webhook` entries actually match
+
+### What Still Requires Manual Action
+- Verify `AUTH_SECRET` in Vercel env matches local `.env` (both must be same for AES state to decrypt cross-environment)
+- `ETSY_REDIRECT_URI` in Vercel env must match URL registered in Etsy developer portal exactly
+
+---
+
+## Review Session 022 — DEPLOY-002: PostgreSQL Migration + Deploy Prep
+**Date:** 2026-06-08
+**Focus:** Switch from SQLite to PostgreSQL; install @prisma/adapter-pg; git staging; deployment guide
+**Files Changed:** 7 files
+**Build Status:** ✅ Passing — 0 TypeScript errors
+
+### Key Changes
+- `prisma/schema.prisma`: `provider = "postgresql"` (was sqlite)
+- `src/lib/db/prisma.ts`: Uses `@prisma/adapter-pg` (pg.Pool is lazy — build passes even without real DB URL)
+- `src/app/portfolio/page.tsx`: Added `export const dynamic = "force-dynamic"` so it doesn't run Prisma queries during build
+- `prisma.config.ts`: Dual-mode URL detection (SQLite for `file:` URL, PostgreSQL for `postgresql://` URL) — for local dev switching
+- `package.json`: Added `@prisma/adapter-pg`, `pg`, `@types/pg`
+- `.gitignore`: Added generated product directories, OS files
+- `DEPLOY-NOW.md`: 10-step production deployment guide
+- `.env`: `DATABASE_URL` cleared — must be set to Neon postgresql:// string
+
+### Architecture Note
+Prisma 7 with `provider = "postgresql"` uses "client" engine mode requiring a driver adapter. The pg adapter (pg.Pool) is lazy — it doesn't connect at construction, only on first query. This allows `npm run build` to pass without a real PostgreSQL connection. At runtime, `DATABASE_URL` must be a valid `postgresql://` URL.
+
+### Local Dev after this change
+Local dev queries now require a real PostgreSQL URL in `DATABASE_URL`. Recommended: create a Neon dev branch (free) and use its connection string locally. The SQLite database (`prisma/dev.db`) is no longer used.
+
+---
+
 ## Review Session 021 — CONNECT-001 + DEPLOY-001: OAuth Fix + Production Hardening
 **Date:** 2026-06-06
 **Focus:** Pinterest/Etsy connect UI, build pipeline completeness, cold-start mode, image resize, email token mobile fix, deployment docs

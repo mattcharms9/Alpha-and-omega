@@ -1,5 +1,5 @@
 # Alpha & Omega — Operational Status
-**Last Updated:** 2026-06-06 (Session 021 — CONNECT-001 + DEPLOY-001)
+**Last Updated:** 2026-06-08 (Session 023 — Etsy OAuth comprehensive repair)
 
 ---
 
@@ -7,7 +7,8 @@
 
 | Check | Status | Notes |
 |-------|--------|-------|
-| `npm run build` | ✅ Passing | Session 021: Pinterest OAuth redirect handling, build completeness, cold-start, image resize, email token GET, deployment docs |
+| `npm run build` | ✅ Passing | Session 022: PostgreSQL migration complete — schema=postgresql, @prisma/adapter-pg, portfolio page forced dynamic |
+| `npx prisma validate` | ✅ Valid | provider="postgresql", all 3 new LaunchCard fields (buildCompleteness, stagesCompleted, stagesFailed) |
 | `npx tsc --noEmit` | ✅ 0 errors | All new files type-safe; no `any` types |
 | `npx prisma validate` | ✅ Valid | EtsySearchCache, IntelligenceInsight, Session, Account, VerificationToken models valid |
 | `npx prisma db push` | ✅ Synced | All new columns and models applied |
@@ -105,8 +106,8 @@
 | Pinterest Analytics Tab | ✅ Live | Portfolio page server-rendered section — total saves, clicks, impressions, top 5 pins |
 | Pin Queue Cron | ✅ Live | `/api/cron/process-pin-queue` every 30 min — publishes queued pins + auto-syncs analytics for pins 1–30 days old |
 | PDF Generation | ⚠️ Templates Built | `@react-pdf/renderer` v4.5.1; 4 templates created (knowledge-guide, bingo-card, squares-grid, how-well-do-you-know); PDF generation API route still pending (TD-018) |
-| Etsy OAuth (PKCE) | ✅ Done | EtsyConnection model; connect/callback/status/disconnect; PKCE flow with cookie verifier |
-| Etsy Listing Publisher (SSE) | ✅ Done | Full publish flow: create draft → upload PDF → upload cover → activate; streaming progress |
+| Etsy OAuth (PKCE) | ✅ Live | AES-256-GCM encrypted state (no cookies); JWT user_id decode; correct /users/{id}/shops endpoint; error redirects use req.url origin |
+| Etsy Listing Publisher (SSE) | ✅ Live | Full publish flow: create draft → upload PDF → upload cover → activate; single getValidEtsyToken() call per publish; stale-token bug fixed in update/renew |
 | Etsy Sale Webhook | ✅ Done | receipt.created events → RevenueRecord + sale alert |
 | Etsy Analytics Sync Cron | ✅ Done | Daily 6am UTC sync; batches 10 listings; updates views/favorites |
 | Listing SEO Optimizer | ✅ Done | AI engine: title ≤140, 13 tags ≤20, description; seoScore 0-100; saves to Product.optimizedListing |
@@ -169,6 +170,9 @@
 | Email Token Mobile Fix | ✅ Live | GET `/api/launch-queue?approve={id}&token={t}` redirects to `/launch-queue?success=approved`; works without browser session |
 | Production Deployment Docs | ✅ Done | `GITHUB_SETUP.md` (9-step deploy guide), `.env.production.example` (all required vars documented) |
 | vercel.json Functions Config | ✅ Done | `maxDuration`: batch=120s, launch-queue=120s, run-agent-queue=300s; note: `*/30` cron requires Vercel Pro |
+| PostgreSQL Migration | ✅ Done | schema provider="postgresql"; @prisma/adapter-pg; DATABASE_URL must be postgresql:// for all environments |
+| DEPLOY-NOW.md | ✅ Done | 10-step deploy guide at project root; covers Neon, Vercel, Blob, env vars, platform redirects |
+| Git Staged | ✅ Ready | All files staged; .env and prisma/dev.db confirmed NOT tracked; ready to commit and push |
 
 ---
 
