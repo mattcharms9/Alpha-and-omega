@@ -13,7 +13,7 @@ const PUBLIC_API_PATHS = [
   "/api/pinterest?action=connect",
 ];
 
-const PUBLIC_PAGE_PATHS = ["/login", "/signup", "/pricing"];
+const PUBLIC_PAGE_PATHS = ["/login", "/signup", "/pricing", "/privacy-policy"];
 
 const SKIP_PREFIXES = ["/_next/", "/favicon", "/product-pdfs/", "/product-images/", "/sw.js"];
 
