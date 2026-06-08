@@ -3,6 +3,7 @@ import { prisma } from "@/lib/db/prisma";
 import { toSafeErrorMessage } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
 import { generateCodeVerifier, generateCodeChallenge, ETSY_SCOPES, withEtsyToken, getShopListings } from "@/lib/integrations/etsy";
+import { buildOAuthState } from "@/lib/etsy-state";
 import { z } from "zod";
 
 const ETSY_AUTH_BASE = "https://www.etsy.com/oauth/connect";
@@ -42,13 +43,10 @@ export async function GET(req: NextRequest) {
       }
       const verifier = generateCodeVerifier();
       const challenge = await generateCodeChallenge(verifier);
-      const state = Math.random().toString(36).slice(2);
-      const authUrl = `${ETSY_AUTH_BASE}?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(ETSY_SCOPES)}&state=${state}&code_challenge=${challenge}&code_challenge_method=S256`;
+      const state = buildOAuthState(verifier);
+      const authUrl = `${ETSY_AUTH_BASE}?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(ETSY_SCOPES)}&state=${encodeURIComponent(state)}&code_challenge=${challenge}&code_challenge_method=S256`;
 
-      const res = NextResponse.json({ success: true, data: { authUrl, state } });
-      res.cookies.set("etsy_pkce_verifier", verifier, { httpOnly: true, maxAge: 300, path: "/" });
-      res.cookies.set("etsy_pkce_state", state, { httpOnly: true, maxAge: 300, path: "/" });
-      return res;
+      return NextResponse.json({ success: true, data: { authUrl } });
     }
 
     return NextResponse.json({ success: false, error: "Unknown action" }, { status: 400 });

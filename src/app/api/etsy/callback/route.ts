@@ -1,28 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+import { extractVerifierFromState } from "@/lib/etsy-state";
 
 const ETSY_TOKEN_URL = "https://api.etsy.com/v3/public/oauth/token";
 
 // GET — receives redirect from Etsy OAuth; exchanges code for tokens
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
+  const reqUrl = new URL(req.url);
+  const { searchParams } = reqUrl;
   const code = searchParams.get("code");
   const returnedState = searchParams.get("state");
+  const base = `${reqUrl.protocol}//${reqUrl.host}`;
 
-  const verifier = req.cookies.get("etsy_pkce_verifier")?.value;
-  const expectedState = req.cookies.get("etsy_pkce_state")?.value;
+  const etsyError = searchParams.get("error");
+  if (etsyError) return redirectWithError(base, `Etsy denied: ${etsyError}`);
+  if (!code) return redirectWithError(base, "No auth code — check redirect_uri matches Etsy developer portal");
+  if (!returnedState) return redirectWithError(base, "No state returned from Etsy");
 
-  if (!code || !verifier) {
-    return redirectWithError("Missing OAuth code or PKCE verifier");
-  }
-  if (expectedState && returnedState !== expectedState) {
-    return redirectWithError("State mismatch — possible CSRF attack");
-  }
+  const verifier = extractVerifierFromState(returnedState);
+  if (!verifier) return redirectWithError(base, "Invalid OAuth state — please try connecting again");
 
   const clientId = process.env.ETSY_CLIENT_ID;
   const redirectUri = process.env.ETSY_REDIRECT_URI;
   if (!clientId || !redirectUri) {
-    return redirectWithError("Etsy not configured");
+    return redirectWithError(base, "Etsy not configured");
   }
 
   try {
@@ -40,16 +41,28 @@ export async function GET(req: NextRequest) {
     });
 
     if (!tokenRes.ok) {
-      return redirectWithError("Token exchange failed");
+      const errText = await tokenRes.text().catch(() => "");
+      return redirectWithError(base, `Token exchange failed (${tokenRes.status}${errText ? `: ${errText.slice(0, 200)}` : ""})`);
     }
 
     const tokenData = await tokenRes.json() as {
-      access_token: string; refresh_token: string; expires_in: number;
+      access_token: string; refresh_token: string; expires_in: number; user_id?: string | number;
     };
 
-    // Get user's shops
+    // Get user's shops — use user_id from token if present, else discover via /users/me
+    let userId: string | number | undefined = tokenData.user_id;
+    if (!userId) {
+      const meRes = await fetch("https://openapi.etsy.com/v3/application/users/me", {
+        headers: { "x-api-key": clientId, Authorization: `Bearer ${tokenData.access_token}` },
+      });
+      if (!meRes.ok) return redirectWithError(base, "Could not identify Etsy user");
+      const meData = await meRes.json() as { user_id?: string | number };
+      userId = meData.user_id;
+    }
+    if (!userId) return redirectWithError(base, "Could not identify Etsy user");
+
     const shopsRes = await fetch(
-      "https://openapi.etsy.com/v3/application/users/me/shops?limit=1",
+      `https://openapi.etsy.com/v3/application/users/${userId}/shops`,
       {
         headers: {
           "x-api-key": clientId,
@@ -58,14 +71,21 @@ export async function GET(req: NextRequest) {
       }
     );
 
-    if (!shopsRes.ok) return redirectWithError("Could not fetch shop info");
+    if (!shopsRes.ok) {
+      const errText = await shopsRes.text().catch(() => "");
+      return redirectWithError(base, `Could not fetch shop info (${shopsRes.status}${errText ? `: ${errText.slice(0, 120)}` : ""})`);
+    }
 
-    const shopsData = await shopsRes.json() as {
-      results: Array<{ shop_id: number; shop_name: string; url: string; currency_code: string }>;
-    };
+    type ShopObj = { shop_id: number; shop_name: string; url: string; currency_code: string };
+    const shopsData = await shopsRes.json() as ShopObj | { results: ShopObj[] } | { count: number; results: ShopObj[] };
 
-    const shop = shopsData.results[0];
-    if (!shop) return redirectWithError("No Etsy shop found on this account");
+    const shop: ShopObj | undefined =
+      "shop_id" in shopsData
+        ? shopsData
+        : "results" in shopsData
+          ? shopsData.results[0]
+          : undefined;
+    if (!shop) return redirectWithError(base, "No Etsy shop found on this account");
 
     const expiry = new Date(Date.now() + tokenData.expires_in * 1000);
 
@@ -91,16 +111,12 @@ export async function GET(req: NextRequest) {
       },
     });
 
-    const res = NextResponse.redirect(new URL("/publishing?connected=etsy", req.url));
-    res.cookies.delete("etsy_pkce_verifier");
-    res.cookies.delete("etsy_pkce_state");
-    return res;
+    return NextResponse.redirect(`${base}/publishing?connected=etsy`);
   } catch {
-    return redirectWithError("OAuth flow failed");
+    return redirectWithError(base, "OAuth flow failed");
   }
 }
 
-function redirectWithError(msg: string): NextResponse {
-  const base = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3090";
+function redirectWithError(base: string, msg: string): NextResponse {
   return NextResponse.redirect(`${base}/publishing?etsy_error=${encodeURIComponent(msg)}`);
 }
