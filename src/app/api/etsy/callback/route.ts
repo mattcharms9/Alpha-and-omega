@@ -49,17 +49,9 @@ export async function GET(req: NextRequest) {
       access_token: string; refresh_token: string; expires_in: number; user_id?: string | number;
     };
 
-    // Get user's shops — use user_id from token if present, else discover via /users/me
-    let userId: string | number | undefined = tokenData.user_id;
-    if (!userId) {
-      const meRes = await fetch("https://openapi.etsy.com/v3/application/users/me", {
-        headers: { "x-api-key": clientId, Authorization: `Bearer ${tokenData.access_token}` },
-      });
-      if (!meRes.ok) return redirectWithError(base, "Could not identify Etsy user");
-      const meData = await meRes.json() as { user_id?: string | number };
-      userId = meData.user_id;
-    }
-    if (!userId) return redirectWithError(base, "Could not identify Etsy user");
+    // Etsy access tokens are JWTs — decode payload to get user_id without an extra API call
+    const userId = tokenData.user_id ?? jwtUserId(tokenData.access_token);
+    if (!userId) return redirectWithError(base, "Could not identify Etsy user from token");
 
     const shopsRes = await fetch(
       `https://openapi.etsy.com/v3/application/users/${userId}/shops`,
@@ -119,4 +111,16 @@ export async function GET(req: NextRequest) {
 
 function redirectWithError(base: string, msg: string): NextResponse {
   return NextResponse.redirect(`${base}/publishing?etsy_error=${encodeURIComponent(msg)}`);
+}
+
+function jwtUserId(token: string): string | undefined {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return undefined;
+    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, unknown>;
+    const id = decoded.user_id ?? decoded.userId ?? decoded.sub;
+    return id != null ? String(id) : undefined;
+  } catch {
+    return undefined;
+  }
 }
