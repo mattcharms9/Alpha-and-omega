@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { extractVerifierFromState } from "@/lib/etsy-state";
+import { resolveEtsyApiKey } from "@/lib/integrations/etsy";
 
 const ETSY_TOKEN_URL = "https://api.etsy.com/v3/public/oauth/token";
 
@@ -20,11 +21,15 @@ export async function GET(req: NextRequest) {
   const verifier = extractVerifierFromState(returnedState);
   if (!verifier) return redirectWithError(base, "Invalid OAuth state — please try connecting again");
 
-  const clientId = process.env.ETSY_CLIENT_ID;
-  const redirectUri = process.env.ETSY_REDIRECT_URI;
-  if (!clientId || !redirectUri) {
-    return redirectWithError(base, "Etsy not configured");
+  let clientId: string;
+  try {
+    clientId = resolveEtsyApiKey();
+  } catch {
+    return redirectWithError(base, "ETSY_CLIENT_ID / ETSY_API_KEY env var not set on this server");
   }
+  const redirectUri = process.env.ETSY_REDIRECT_URI;
+  if (!redirectUri) return redirectWithError(base, "ETSY_REDIRECT_URI env var not set");
+  console.log("[etsy callback] using api key prefix:", clientId.slice(0, 8));
 
   try {
     // Exchange code for tokens

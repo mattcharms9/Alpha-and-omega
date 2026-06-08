@@ -98,13 +98,19 @@ export interface EtsyTokenContext {
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 
+/** Resolves the API key from either env var name so Vercel + local both work. */
+export function resolveEtsyApiKey(): string {
+  const key = process.env.ETSY_CLIENT_ID ?? process.env.ETSY_API_KEY;
+  if (!key) throw new Error("ETSY_CLIENT_ID (or ETSY_API_KEY) env var is not set");
+  return key;
+}
+
 async function etsyFetch(
   path: string,
   accessToken: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const clientId = process.env.ETSY_CLIENT_ID;
-  if (!clientId) throw new Error("ETSY_CLIENT_ID not configured");
+  const clientId = resolveEtsyApiKey();
 
   const res = await fetch(`${ETSY_BASE}${path}`, {
     ...options,
@@ -151,8 +157,7 @@ export async function uploadListingFile(
   const blob = new Blob([new Uint8Array(fileBuffer)], { type: "application/pdf" });
   formData.append("file", blob, filename);
 
-  const clientId = process.env.ETSY_CLIENT_ID;
-  if (!clientId) throw new Error("ETSY_CLIENT_ID not configured");
+  const clientId = resolveEtsyApiKey();
 
   const res = await fetch(
     `${ETSY_BASE}/application/shops/${shopId}/listings/${listingId}/files`,
@@ -185,8 +190,7 @@ export async function uploadListingImage(
   const blob = new Blob([new Uint8Array(imageBuffer)], { type: mimeType });
   formData.append("image", blob, filename);
 
-  const clientId = process.env.ETSY_CLIENT_ID;
-  if (!clientId) throw new Error("ETSY_CLIENT_ID not configured");
+  const clientId = resolveEtsyApiKey();
 
   const res = await fetch(
     `${ETSY_BASE}/application/shops/${shopId}/listings/${listingId}/images`,
@@ -260,8 +264,7 @@ export async function getShopListings(
 }
 
 export async function refreshEtsyToken(refreshToken: string): Promise<EtsyTokenResponse> {
-  const clientId = process.env.ETSY_CLIENT_ID;
-  if (!clientId) throw new Error("ETSY_CLIENT_ID not configured");
+  const clientId = resolveEtsyApiKey();
 
   const res = await fetch("https://api.etsy.com/v3/public/oauth/token", {
     method: "POST",
