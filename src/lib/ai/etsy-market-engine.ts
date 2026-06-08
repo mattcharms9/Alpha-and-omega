@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import { createHash } from "crypto";
+import { resolveEtsyApiKey } from "@/lib/integrations/etsy";
 import type { Prisma } from "@prisma/client";
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -56,15 +57,15 @@ async function setCache(key: string, data: unknown): Promise<void> {
 }
 
 async function etsyGet(path: string): Promise<Response | null> {
-  const clientId = process.env.ETSY_CLIENT_ID;
-  if (!clientId) return null;
+  let apiKey: string;
+  try { apiKey = resolveEtsyApiKey(); } catch { return null; }
 
   const conn = await prisma.etsyConnection.findFirst({ where: { isActive: true } });
   if (!conn) return null;
 
   return fetch(`${ETSY_BASE}${path}`, {
     headers: {
-      "x-api-key": clientId,
+      "x-api-key": apiKey,
       Authorization: `Bearer ${conn.accessToken}`,
     },
   });

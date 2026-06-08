@@ -100,8 +100,8 @@ export interface EtsyTokenContext {
 
 /** Resolves the API key from either env var name so Vercel + local both work. */
 export function resolveEtsyApiKey(): string {
-  const key = process.env.ETSY_CLIENT_ID ?? process.env.ETSY_API_KEY;
-  if (!key) throw new Error("ETSY_CLIENT_ID (or ETSY_API_KEY) env var is not set");
+  const key = process.env.ETSY_API_KEY ?? process.env.ETSY_CLIENT_ID;
+  if (!key) throw new Error("ETSY_API_KEY env var is not set");
   return key;
 }
 

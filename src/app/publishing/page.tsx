@@ -298,7 +298,7 @@ function PublishingPageInner() {
       if (json.success && json.data?.authUrl) {
         window.location.href = json.data.authUrl;
       } else {
-        setConnectError(json.error ?? "Could not start Etsy connection. Check that ETSY_CLIENT_ID is set in your .env file.");
+        setConnectError(json.error ?? "Could not start Etsy connection. Check that ETSY_API_KEY is set in your .env file.");
       }
     } catch {
       setConnectError("Network error — is the dev server running?");
@@ -333,7 +333,9 @@ function PublishingPageInner() {
       <div style={{ display: "flex", alignItems: "center", gap: 0, padding: "0 2rem", borderBottom: "1px solid var(--border-light)", background: "var(--bg-surface)" }}>
         {TABS.map(({ id, label, icon: Icon }) => {
           const isActive = activeTab === id;
-          const badge = id === "etsy" ? (etsyStatus?.listingCount ?? 0) : 0;
+          const etsyConnected = id === "etsy" && etsyStatus?.connected;
+          const shopName = etsyConnected ? etsyStatus?.shopName : null;
+          const listingCount = etsyConnected ? (etsyStatus?.listingCount ?? 0) : 0;
           return (
             <button
               key={id}
@@ -350,9 +352,15 @@ function PublishingPageInner() {
             >
               <Icon size={14} />
               {label}
-              {badge > 0 && (
+              {shopName && (
+                <span style={{ display: "inline-flex", alignItems: "center", gap: "0.25rem", fontSize: "0.65rem", fontWeight: 600, padding: "0.15rem 0.5rem", borderRadius: 10, background: "#f0fdf4", color: "#16a34a", border: "1px solid #bbf7d0", whiteSpace: "nowrap" }}>
+                  <span style={{ width: 5, height: 5, borderRadius: "50%", background: "#16a34a", flexShrink: 0, display: "inline-block" }} />
+                  {shopName}
+                </span>
+              )}
+              {listingCount > 0 && (
                 <span style={{ fontSize: "0.65rem", fontWeight: 700, padding: "0.125rem 0.375rem", borderRadius: 10, background: "var(--emerald-bg)", color: "var(--emerald)", border: "1px solid var(--emerald-border)" }}>
-                  {badge}
+                  {listingCount}
                 </span>
               )}
             </button>

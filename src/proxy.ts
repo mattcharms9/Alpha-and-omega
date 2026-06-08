@@ -6,6 +6,7 @@ const PUBLIC_API_PATHS = [
   "/api/auth/",
   "/api/cron/",
   "/api/gumroad/webhook",
+  "/api/etsy?action=callback",
   "/api/etsy/callback",
   "/api/etsy/webhook",
   "/api/billing?action=webhook",
