@@ -4,10 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useEffect } from "react";
+import { signOut, useSession } from "next-auth/react";
 import {
   Zap, Brain, Crosshair, Radio, Package, BookOpen,
   Gamepad2, FileText, PieChart, Send, Settings,
-  Building2, ChevronDown, ChevronUp, Check, Inbox,
+  Building2, ChevronDown, ChevronUp, Check, Inbox, LogOut,
 } from "lucide-react";
 import { loadScanFromCache } from "@/lib/cache/intelligence-cache";
 import { PipelineProgress } from "@/components/layout/PipelineProgress";
@@ -360,8 +361,28 @@ export function Sidebar() {
       <div style={{ padding: "0.75rem 1rem", borderTop: "1px solid var(--border-light)", flexShrink: 0 }}>
         <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>Monthly Revenue</div>
         <div style={{ fontSize: "var(--text-xl)", fontWeight: 600, color: "var(--text-primary)", marginTop: "0.125rem" }}>$0</div>
+        <AccountFooter />
       </div>
     </aside>
+  );
+}
+
+function AccountFooter() {
+  const { data: session } = useSession();
+  if (!session?.user) return null;
+  return (
+    <div style={{ marginTop: "0.625rem", paddingTop: "0.625rem", borderTop: "1px solid var(--border-light)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+      <span style={{ fontSize: "0.65rem", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 120 }}>
+        {session.user.email}
+      </span>
+      <button
+        onClick={() => void signOut({ callbackUrl: "/login" })}
+        style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex", alignItems: "center", gap: 4, fontSize: "0.65rem", flexShrink: 0 }}
+        title="Sign out"
+      >
+        <LogOut size={11} /> Sign out
+      </button>
+    </div>
   );
 }
 
