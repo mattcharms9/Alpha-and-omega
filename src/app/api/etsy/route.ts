@@ -24,6 +24,7 @@ export async function GET(req: NextRequest) {
   const reqUrl = new URL(req.url);
   const action = reqUrl.searchParams.get("action");
   const base = `${reqUrl.protocol}//${reqUrl.host}`;
+  console.log("[etsy] action received:", action, "| host:", reqUrl.host);
 
   // ── OAuth callback (public — no API key needed) ───────────────────────────
   if (action === "callback") {
@@ -146,14 +147,21 @@ export async function GET(req: NextRequest) {
 
   // ── connect — browser navigation (no x-api-key needed, exempt in proxy) ──
   if (action === "connect") {
+    console.log("[etsy connect] building auth URL...");
     let apiKey: string;
-    try { apiKey = getEtsyApiKey(); } catch {
+    try {
+      apiKey = getEtsyApiKey();
+      console.log("[etsy connect] api key resolved, prefix:", apiKey.slice(0, 8));
+    } catch (e) {
+      console.error("[etsy connect] getEtsyApiKey failed:", e);
       return err(base, "ETSY_API_KEY env var not configured on this server");
     }
     const redirectUri = process.env.ETSY_REDIRECT_URI;
     if (!redirectUri) {
+      console.error("[etsy connect] ETSY_REDIRECT_URI is not set");
       return err(base, "ETSY_REDIRECT_URI env var not configured on this server");
     }
+    console.log("[etsy connect] redirect_uri:", redirectUri);
 
     const verifier = generateCodeVerifier();
     const challenge = await generateCodeChallenge(verifier);
@@ -169,7 +177,9 @@ export async function GET(req: NextRequest) {
       code_challenge_method: "S256",
     });
 
-    return NextResponse.redirect(`${ETSY_AUTH_BASE}?${params.toString()}`);
+    const authUrl = `${ETSY_AUTH_BASE}?${params.toString()}`;
+    console.log("[etsy connect] redirecting to etsy, auth URL base:", ETSY_AUTH_BASE);
+    return NextResponse.redirect(authUrl);
   }
 
   // ── Protected GET actions (require x-api-key header via proxy) ───────────

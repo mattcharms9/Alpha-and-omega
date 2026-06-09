@@ -271,8 +271,10 @@ function PublishingPageInner() {
       setSuccessMsg("Pinterest account connected successfully.");
     }
     if (etsyError) {
+      const decoded = decodeURIComponent(etsyError);
+      console.error("[etsy error] OAuth flow failed:", decoded);
       setActiveTab("etsy");
-      setConnectError(`Etsy connection failed: ${decodeURIComponent(etsyError)}`);
+      setConnectError(`Etsy connection failed: ${decoded}`);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
@@ -289,6 +291,7 @@ function PublishingPageInner() {
   useEffect(() => { void loadStatus(); }, [loadStatus]);
 
   function handleEtsyConnect() {
+    console.log("[etsy button] clicked, navigating to connect...");
     window.location.href = "/api/etsy?action=connect";
   }
 
