@@ -16,6 +16,25 @@ const ActivateSchema = z.object({
   brandId: z.string().min(1),
 });
 
+const BankSchema = z.object({
+  id: z.string().min(1),
+  emotion: z.string(),
+  painPoint: z.string(),
+  description: z.string(),
+  intensity: z.number(),
+  monetizationScore: z.number(),
+  evergreenScore: z.number(),
+  audienceLoyalty: z.number(),
+  urgency: z.number(),
+  platforms: z.array(z.string()),
+  audienceArchetypes: z.array(z.string()),
+  productOpportunities: z.array(z.string()),
+  searchVolumeTrend: z.string(),
+  competitionLevel: z.string(),
+  estimatedAnnualRevenue: z.string(),
+  tags: z.array(z.string()),
+});
+
 export async function GET() {
   try {
     const signals = await prisma.bankedSignal.findMany({
@@ -51,6 +70,18 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { searchParams } = new URL(req.url);
     const action = searchParams.get("action") ?? "scan";
+
+    if (action === "bank") {
+      const trend = BankSchema.parse(body);
+      const existing = await prisma.bankedSignal.findFirst({ where: { emotion: trend.emotion, painPoint: trend.painPoint, deletedAt: null } });
+      if (existing) return NextResponse.json({ success: true, data: { alreadySaved: true, id: existing.id } });
+      const opp = computeOpportunityScore({ monetizationScore: trend.monetizationScore, intensity: trend.intensity, urgency: trend.urgency, evergreenScore: trend.evergreenScore, competitionLevel: trend.competitionLevel, freshnessScore: 100 });
+      const rarity = computeRarityScore(trend.competitionLevel, trend.evergreenScore, trend.monetizationScore);
+      const saved = await prisma.bankedSignal.create({
+        data: { id: trend.id, emotion: trend.emotion, painPoint: trend.painPoint, description: trend.description, intensity: trend.intensity, monetizationScore: trend.monetizationScore, evergreenScore: trend.evergreenScore, audienceLoyalty: trend.audienceLoyalty, urgency: trend.urgency, platforms: trend.platforms, audienceArchetypes: trend.audienceArchetypes, productOpportunities: trend.productOpportunities, searchVolumeTrend: trend.searchVolumeTrend, competitionLevel: trend.competitionLevel, estimatedAnnualRevenue: trend.estimatedAnnualRevenue, tags: trend.tags, freshnessScore: 100, rarityScore: rarity, opportunityScore: opp, territory: trend.emotion },
+      });
+      return NextResponse.json({ success: true, data: { saved: true, id: saved.id } });
+    }
 
     if (action === "activate") {
       const { signalId, brandId } = ActivateSchema.parse(body);

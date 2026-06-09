@@ -172,7 +172,7 @@ export default function BrandsPage() {
             <motion.div key="input" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-8">
               <div className="grid grid-cols-3 gap-6">
                 {/* Step 1 */}
-                <Card>
+                <Card style={{ background: "#111", border: "1px solid rgba(255,255,255,0.08)" }}>
                   <CardBody>
                     <div className="flex items-center gap-3 mb-6">
                       <div className="w-8 h-8 rounded-lg bg-gold/10 flex items-center justify-center">
@@ -201,7 +201,7 @@ export default function BrandsPage() {
                 </Card>
 
                 {/* Step 2 */}
-                <Card>
+                <Card style={{ background: "#111", border: "1px solid rgba(255,255,255,0.08)" }}>
                   <CardBody>
                     <div className="flex items-center gap-3 mb-6">
                       <div className="w-8 h-8 rounded-lg bg-violet/10 flex items-center justify-center">
@@ -230,7 +230,7 @@ export default function BrandsPage() {
                 </Card>
 
                 {/* Step 3 */}
-                <Card>
+                <Card style={{ background: "#111", border: "1px solid rgba(255,255,255,0.08)" }}>
                   <CardBody>
                     <div className="flex items-center gap-3 mb-6">
                       <div className="w-8 h-8 rounded-lg bg-emerald/10 flex items-center justify-center">
@@ -276,7 +276,7 @@ export default function BrandsPage() {
                 </Card>
               </div>
 
-              <div className="glass rounded-2xl p-6 border border-white/5">
+              <div style={{ background: "#111", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "1rem", padding: "1.5rem" }}>
                 <h3 className="text-sm font-semibold text-white mb-4">What the Brand Builder produces</h3>
                 <div className="grid grid-cols-4 gap-4">
                   {[
@@ -312,7 +312,7 @@ export default function BrandsPage() {
               </div>
               <div className="text-center">
                 <h3 className="text-lg font-semibold text-white mb-2">Architecting your brand empire</h3>
-                <p className="text-sm text-white/40 max-w-md">Analyzing emotional territories, mapping psychological triggers, structuring offer ecosystems...</p>
+                <p className="text-sm text-white/40 max-w-md">Analyzing emotional territories, mapping psychological triggers, structuring offer ecosystems... (~25s)</p>
               </div>
               <div className="flex gap-2">
                 {["Psychology", "Positioning", "Offers", "Content", "Revenue"].map((phase, i) => (

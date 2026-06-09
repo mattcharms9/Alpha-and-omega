@@ -325,6 +325,8 @@ export default function LaunchQueuePage() {
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
   const [toastMsg, setToastMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [learningContext, setLearningContext] = useState<string | null>(null);
+  const [selectedCardIdx, setSelectedCardIdx] = useState(0);
 
   const loadQueue = useCallback(async () => {
     try {
@@ -339,6 +341,43 @@ export default function LaunchQueuePage() {
   }, []);
 
   useEffect(() => { void loadQueue(); }, [loadQueue]);
+
+  // Load learning context for daily brief
+  useEffect(() => {
+    fetch("/api/learning?action=get-context")
+      .then((r) => r.json() as Promise<{ success: boolean; data?: { context: string } }>)
+      .then((d) => { if (d.success && d.data?.context) setLearningContext(d.data.context); })
+      .catch(() => {});
+  }, []);
+
+  // B7: Keyboard shortcuts
+  useEffect(() => {
+    let lastKey = "";
+    function handleKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const pendingCards = queue?.cards.filter((c) => c.status === "pending") ?? [];
+      const card = pendingCards[selectedCardIdx];
+      if (e.key === "ArrowRight" || e.key === "n") {
+        setSelectedCardIdx((i) => Math.min(i + 1, pendingCards.length - 1));
+      } else if (e.key === "ArrowLeft" || e.key === "p") {
+        setSelectedCardIdx((i) => Math.max(i - 1, 0));
+      } else if (e.key === "a" || e.key === "A") {
+        if (lastKey === "a" || lastKey === "A") {
+          void approveAllHighConfidence();
+          lastKey = "";
+          return;
+        }
+        if (card) void decide(card.id, "approved");
+      } else if (e.key === "s" || e.key === "S") {
+        if (card) void decide(card.id, "skipped");
+      }
+      lastKey = e.key;
+      setTimeout(() => { lastKey = ""; }, 400);
+    }
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
+  }, [queue, selectedCardIdx]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Handle email deep-link redirect params
   useEffect(() => {
@@ -479,6 +518,32 @@ export default function LaunchQueuePage() {
           <div style={{ marginTop: 4, fontStyle: "italic" }}>
             "{String((queue.agentRunLog as Record<string, unknown>).managerNote ?? "")}"
           </div>
+        </div>
+      )}
+
+      {/* B7: Today's Brief — learning context */}
+      {learningContext && (
+        <div style={{ background: "var(--bg-subtle)", border: "1px solid var(--border-light)", borderRadius: "var(--radius-lg)", padding: "14px 18px", marginBottom: 20 }}>
+          <div style={{ fontSize: "0.65rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Today&apos;s Brief · Platform Intelligence</div>
+          <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>{learningContext}</div>
+          {queue?.agentRunLog && !!(queue.agentRunLog as Record<string, unknown>).diversityBreakdown && (
+            <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {Object.entries((queue.agentRunLog as Record<string, unknown>).diversityBreakdown as Record<string, number>).map(([cat, n]) => (
+                <span key={cat} style={{ fontSize: "0.68rem", padding: "2px 8px", borderRadius: 12, background: "var(--bg-elevated)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
+                  {cat}: {String(n)}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* B7: Keyboard shortcut hint */}
+      {queue && queue.cards.length > 0 && (
+        <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginBottom: 16, display: "flex", gap: 12, flexWrap: "wrap" }}>
+          {[["A", "approve"], ["S", "skip"], ["→/←", "navigate"], ["AA", "approve all high-confidence"]].map(([key, action]) => (
+            <span key={key}><kbd style={{ padding: "1px 5px", borderRadius: 4, background: "var(--bg-elevated)", border: "1px solid var(--border-medium)", fontFamily: "monospace", fontSize: "0.65rem" }}>{key}</kbd> {action}</span>
+          ))}
         </div>
       )}
 

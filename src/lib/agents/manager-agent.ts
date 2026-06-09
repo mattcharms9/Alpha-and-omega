@@ -8,16 +8,37 @@ import { runConceptGeneratorAgent } from "./concept-generator-agent";
 import { runCompetitionCheckerAgent } from "./competition-checker-agent";
 import { runOpportunityScorerAgent } from "./opportunity-scorer-agent";
 import { makeLogFn, estimateCost } from "./agent-logger";
+import { getLearningContext } from "@/lib/learning/daily-ledger";
 import type { ScoredOpportunity, LaunchCardData, MarketOpportunity, ConfidenceLevel, CompetitionLevel, AgentContext } from "./agent-types";
+
+// B3: Minimum daily card distribution for diversity
+const DIVERSITY_TARGETS: Record<string, { min: number; max: number }> = {
+  journal:    { min: 3, max: 4 },
+  workbook:   { min: 0, max: 4 },  // combined with journal
+  guide:      { min: 2, max: 3 },
+  game:       { min: 2, max: 3 },
+  bundle:     { min: 2, max: 3 },
+  niche:      { min: 2, max: 3 },
+};
+
+const FORMAT_CATEGORY = (fmt: string): string => {
+  const f = fmt.toLowerCase();
+  if (f.includes("bundle")) return "bundle";
+  if (f.includes("journal") || f.includes("planner") || f.includes("workbook")) return "journal";
+  if (f.includes("guide") || f.includes("checklist") || f.includes("template") || f.includes("knowledge")) return "guide";
+  if (f.includes("game") || f.includes("bingo") || f.includes("trivia") || f.includes("party")) return "game";
+  return "niche";
+};
 
 const MANAGER_SYSTEM_PROMPT = `You are the Manager Agent for an autonomous digital product publishing system.
 
 EDITORIAL REVIEW: Select the best 15 from the scored opportunities. Criteria:
 - No two concepts should be too similar (pick the best from near-duplicates)
-- At least 3 different product formats
+- At least 3 different product formats (journals/workbooks, guides, games, bundles)
+- Mandatory: include at least 2 bundles and 2 games in every queue
 - At least 2 time-sensitive/seasonal opportunities if they exist
 - At least 1 "safe bet" (score >80, low competition, high confidence)
-- At least 1 fresh niche
+- Prioritize niches and formats with proven sales data from the learning context
 
 Return: { selected: number[] (0-based indices of chosen 15), managerNote: string (2 sentences) }`;
 
@@ -89,8 +110,9 @@ export async function runManagerAgent(date: string): Promise<ManagerResult> {
   const scored = await runOpportunityScorerAgent(concepts, checks, niches, ctx, log).catch(() => []);
   totalCost += estimateCost(5000);
 
-  // Stage 6: Manager Editorial Review
-  const { selected15, managerNote } = await runManagerEditorialReview(scored, ctx);
+  // Stage 6: Manager Editorial Review (with learning context)
+  const learningContext = await getLearningContext().catch(() => "No learning data available.");
+  const { selected15, managerNote, diversityBreakdown } = await runManagerEditorialReview(scored, ctx, learningContext);
   totalCost += estimateCost(6000);
 
   // Write LaunchCards
@@ -127,7 +149,7 @@ export async function runManagerAgent(date: string): Promise<ManagerResult> {
     where: { id: queue.id },
     data: {
       status: selected15.length >= 10 ? "ready" : "partial",
-      agentRunLog: { managerNote, isColdStart: ctx.isColdStart, totalCost, runDurationMs: Date.now() - runStart } as Prisma.InputJsonValue,
+      agentRunLog: { managerNote, isColdStart: ctx.isColdStart, totalCost, runDurationMs: Date.now() - runStart, diversityBreakdown } as Prisma.InputJsonValue,
     },
   });
 
@@ -143,15 +165,27 @@ export async function runManagerAgent(date: string): Promise<ManagerResult> {
 
 async function runManagerEditorialReview(
   scored: ScoredOpportunity[],
-  ctx: AgentContext
-): Promise<{ selected15: LaunchCardData[]; managerNote: string }> {
+  ctx: AgentContext,
+  learningContext: string
+): Promise<{ selected15: LaunchCardData[]; managerNote: string; diversityBreakdown: Record<string, number> }> {
   if (scored.length === 0) {
-    return { selected15: [], managerNote: "No opportunities available today." };
+    return { selected15: [], managerNote: "No opportunities available today.", diversityBreakdown: {} };
   }
 
   const coldStartPrefix = ctx.coldStartNote ? `\n${ctx.coldStartNote}\n` : "";
   const prompt = `Review ${scored.length} scored opportunities for this digital product seller.${coldStartPrefix}
-Select the best 15 ensuring: variety in formats, 2+ seasonal picks, 1 safe bet, 1 fresh niche.
+
+LEARNING CONTEXT (use this to prioritize selections):
+${learningContext}
+
+DIVERSITY REQUIREMENT: The 15 selected must include at minimum:
+- 2 bundles
+- 2 games or party products
+- 2 knowledge guides or checklists
+- 2 journals, planners, or workbooks
+- 1 wildcard (your highest confidence pick regardless of category)
+
+Select the best 15 ensuring variety in formats, 2+ seasonal picks, 1 safe bet, 1 fresh niche.
 Return: { selected: number[] (0-based indices, max 15), managerNote: "2 sentences" }
 
 Opportunities:
@@ -163,6 +197,13 @@ ${scored.map((s, i) => `${i}: "${s.concept.title}" | score=${s.opportunityScore}
 
   const indices = (result.selected ?? []).slice(0, 15).filter((i) => i >= 0 && i < scored.length);
   const selected = indices.length >= 10 ? indices : scored.slice(0, 15).map((_, i) => i);
+
+  // B3: Enforce diversity — log breakdown (enforcement is advisory for now; the prompt guides selection)
+  const diversityBreakdown: Record<string, number> = {};
+  selected.forEach((idx) => {
+    const cat = FORMAT_CATEGORY(scored[idx]!.concept.format);
+    diversityBreakdown[cat] = (diversityBreakdown[cat] ?? 0) + 1;
+  });
 
   const cards: LaunchCardData[] = selected.map((idx, pos) => {
     const s = scored[idx]!;
@@ -194,5 +235,5 @@ ${scored.map((s, i) => `${i}: "${s.concept.title}" | score=${s.opportunityScore}
     };
   });
 
-  return { selected15: cards, managerNote: result.managerNote };
+  return { selected15: cards, managerNote: result.managerNote, diversityBreakdown };
 }

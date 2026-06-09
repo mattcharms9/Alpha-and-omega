@@ -437,6 +437,7 @@ export default function CommandCenterPage() {
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const [pipeline, setPipeline] = useState<{ scanTs: number | null; draftCount: number; publishedCount: number; lastPublishedTitle: string | null } | null>(null);
   const [quickIdeasOpen, setQuickIdeasOpen] = useState(false);
+  const [intelligenceScore, setIntelligenceScore] = useState<{ score: number; daysOfData: number; totalSales: number; unlocks: { day: number; label: string; unlocked: boolean }[] } | null>(null);
 
   const loadState = useCallback(async () => {
     try {
@@ -475,6 +476,14 @@ export default function CommandCenterPage() {
     } finally {
       setBriefLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    // Load intelligence score
+    fetch("/api/learning?action=score")
+      .then((r) => r.json() as Promise<{ success: boolean; data?: typeof intelligenceScore }>)
+      .then((d) => { if (d.success && d.data) setIntelligenceScore(d.data); })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -1031,6 +1040,32 @@ export default function CommandCenterPage() {
 
         {/* ── Right column ─────────────────────────────────────────────────── */}
         <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
+
+          {/* B8: Platform Intelligence Score */}
+          {intelligenceScore !== null && (
+            <div style={{ background: "var(--bg-surface)", border: "1px solid var(--border-light)", borderRadius: "var(--radius-lg)", padding: "1.25rem", boxShadow: "var(--shadow-xs)" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "0.75rem" }}>
+                <div style={{ fontSize: "var(--text-sm)", fontWeight: 500, color: "var(--text-primary)" }}>Platform Intelligence Score</div>
+                <div style={{ fontSize: "1.25rem", fontWeight: 700, color: intelligenceScore.score >= 50 ? "var(--emerald)" : intelligenceScore.score >= 20 ? "var(--amber)" : "var(--text-muted)" }}>
+                  {intelligenceScore.score}<span style={{ fontSize: "0.75rem", fontWeight: 400, color: "var(--text-muted)" }}>/100</span>
+                </div>
+              </div>
+              <div style={{ height: 6, background: "var(--bg-subtle)", borderRadius: 3, overflow: "hidden", marginBottom: "0.75rem" }}>
+                <div style={{ width: `${intelligenceScore.score}%`, height: "100%", background: intelligenceScore.score >= 50 ? "var(--emerald)" : intelligenceScore.score >= 20 ? "var(--amber)" : "var(--border-medium)", borderRadius: 3, transition: "width 0.8s ease" }} />
+              </div>
+              <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", marginBottom: "0.875rem" }}>
+                {intelligenceScore.daysOfData === 0 ? "Based on market patterns · Learning starts on first sale" : `Based on ${intelligenceScore.daysOfData} day${intelligenceScore.daysOfData !== 1 ? "s" : ""} of data · ${intelligenceScore.totalSales} sale${intelligenceScore.totalSales !== 1 ? "s" : ""} tracked`}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {intelligenceScore.unlocks.map((u) => (
+                  <div key={u.day} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "0.72rem" }}>
+                    <span style={{ color: u.unlocked ? "var(--emerald)" : "var(--border-medium)", fontSize: "0.75rem" }}>{u.unlocked ? "✓" : "○"}</span>
+                    <span style={{ color: u.unlocked ? "var(--text-secondary)" : "var(--text-muted)" }}>Day {u.day}: {u.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Next Best Action */}
           <div

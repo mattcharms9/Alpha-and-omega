@@ -1,5 +1,15 @@
 @import "tailwindcss";
 
+/* Tailwind v4 custom color tokens — must come before :root definitions */
+@theme {
+  --color-gold:    #D97706;
+  --color-violet:  #7C3AED;
+  --color-emerald: #16A34A;
+  --color-amber:   #D97706;
+  --color-rose:    #E11D48;
+  --color-cyan:    #0891B2;
+}
+
 /* ─────────────────────────────────────────────────────────────────────────── */
 /* DESIGN SYSTEM — Alpha & Omega                                               */
 /* Light mode · Notion/Linear/Stripe inspired                                 */

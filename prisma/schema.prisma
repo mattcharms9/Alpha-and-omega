@@ -139,6 +139,7 @@ model Product {
   deletedAt               DateTime?
   repricingApplications   Int              @default(0)
   lastRepricedAt          DateTime?
+  listingQualityScore     Int?
   createdAt               DateTime         @default(now())
   updatedAt               DateTime         @updatedAt
   nicheId                 String?
@@ -525,6 +526,8 @@ model EmpireConfig {
   lastAgentRunAt       DateTime?
   lastAgentRunCost     Float?
   totalAgentRunCost    Float     @default(0)
+  intelligenceScore    Int       @default(0)
+  intelligenceScoreAt  DateTime?
 }
 
 model NicheResearch {
@@ -788,4 +791,46 @@ model AgentRunLog {
 
   @@index([queueId])
   @@index([agentName])
+}
+
+model LearningLedger {
+  id           String   @id @default(cuid())
+  date         String   @unique
+  lessons      Json
+  revenueTotal Float    @default(0)
+  salesCount   Int      @default(0)
+  createdAt    DateTime @default(now())
+
+  @@index([date])
+}
+
+model CumulativeLearning {
+  id                 String   @id @default("singleton")
+  winningNiches      Json     @default("[]")
+  winningFormats     Json     @default("{}")
+  winningPricePoints Json     @default("{}")
+  deadNiches         Json     @default("[]")
+  totalSales         Int      @default(0)
+  totalRevenue       Float    @default(0)
+  daysOfData         Int      @default(0)
+  intelligenceScore  Int      @default(0)
+  lastUpdated        DateTime @default(now())
+}
+
+model Bundle {
+  id              String   @id @default(cuid())
+  name            String
+  theme           String
+  bundlePrice     Float
+  componentIds    Json
+  etsyListingId   String?
+  etsyTitle       String?
+  etsyDescription String?
+  status          String   @default("draft")
+  revenue         Float    @default(0)
+  salesCount      Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([status])
+  @@index([theme])
 }

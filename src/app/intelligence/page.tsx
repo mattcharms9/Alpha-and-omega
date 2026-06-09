@@ -88,6 +88,19 @@ function TrendCard({
   const [nicheExpanded, setNicheExpanded] = useState(false);
   const [nicheLoading, setNicheLoading] = useState(false);
   const [nicheReport, setNicheReport] = useState<SubNiche[] | null>(null);
+  const [bankStatus, setBankStatus] = useState<"idle" | "saving" | "saved" | "exists">("idle");
+  const [researchError, setResearchError] = useState<string | null>(null);
+
+  async function handleSaveToSignalBank(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (bankStatus !== "idle") return;
+    setBankStatus("saving");
+    try {
+      const res = await apiFetch("/api/signals?action=bank", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(trend) });
+      const data = await res.json() as { success: boolean; data?: { alreadySaved?: boolean } };
+      setBankStatus(data.data?.alreadySaved ? "exists" : "saved");
+    } catch { setBankStatus("idle"); }
+  }
 
   async function handleExpandNiche(e: React.MouseEvent) {
     e.stopPropagation();
@@ -118,6 +131,7 @@ function TrendCard({
   async function runMarketResearch(e: React.MouseEvent) {
     e.stopPropagation();
     setResearching(true);
+    setResearchError(null);
     try {
       const res = await apiFetch("/api/market-research", {
         method: "POST",
@@ -128,8 +142,8 @@ function TrendCard({
       if (!data.success) throw new Error(data.error);
       setMarketReport(data.data);
       setExpanded(true);
-    } catch {
-      // silently fail — user can retry
+    } catch (err) {
+      setResearchError(err instanceof Error ? err.message : "Research failed — try again");
     } finally {
       setResearching(false);
     }
@@ -284,8 +298,9 @@ function TrendCard({
                   }}
                 >
                   {researching ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> : <Search size={11} />}
-                  {researching ? "Researching..." : "Market Research"}
+                  {researching ? "Researching... (~20s)" : "Market Research"}
                 </button>
+                {researchError && <span style={{ fontSize: "0.7rem", color: "var(--rose)" }}>{researchError}</span>}
                 <button
                   onClick={handleExpandNiche}
                   disabled={nicheLoading}
@@ -305,7 +320,7 @@ function TrendCard({
                   }}
                 >
                   {nicheLoading ? <Loader2 size={11} style={{ animation: "spin 1s linear infinite" }} /> : <Crosshair size={11} />}
-                  {nicheExpanded ? "Collapse ↑" : nicheLoading ? "Expanding..." : "Expand Niche"}
+                  {nicheExpanded ? "Collapse ↑" : nicheLoading ? "Expanding... (~15s)" : "Expand Niche"}
                 </button>
                 <button
                   onClick={(e) => { e.stopPropagation(); onLaunchProduct(trend); }}
@@ -417,6 +432,17 @@ function TrendCard({
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* A4: Save to Signal Bank button */}
+                <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid var(--border-subtle)", display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={handleSaveToSignalBank}
+                    disabled={bankStatus !== "idle"}
+                    style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 14px", borderRadius: 8, fontSize: "0.8rem", fontWeight: 600, cursor: bankStatus !== "idle" ? "default" : "pointer", border: "1px solid var(--border-medium)", background: bankStatus === "saved" ? "var(--emerald-bg)" : bankStatus === "exists" ? "var(--bg-elevated)" : "var(--bg-elevated)", color: bankStatus === "saved" ? "var(--emerald)" : bankStatus === "exists" ? "var(--text-muted)" : "var(--text-secondary)" }}
+                  >
+                    {bankStatus === "saving" ? "Saving..." : bankStatus === "saved" ? "✓ Saved to Signal Bank" : bankStatus === "exists" ? "✓ Already in Signal Bank" : "Save to Signal Bank"}
+                  </button>
                 </div>
 
                 {marketReport && (
@@ -596,6 +622,8 @@ export default function IntelligencePage() {
   const [calData, setCalData] = useState<SeasonalCalendar | null>(null);
   const [calError, setCalError] = useState<string | null>(null);
   const [expandedMonth, setExpandedMonth] = useState<number | null>(null);
+  const [autobankedCount, setAutobankedCount] = useState<number | null>(null);
+  const [slowWarning, setSlowWarning] = useState(false);
 
   useEffect(() => {
     apiFetch("/api/performance")
@@ -720,6 +748,9 @@ export default function IntelligencePage() {
   async function runScan() {
     setLoading(true);
     setError(null);
+    setSlowWarning(false);
+    setAutobankedCount(null);
+    const slowTimer = setTimeout(() => setSlowWarning(true), 25000);
     try {
       const res = await apiFetch("/api/intelligence", {
         method: "POST",
@@ -738,11 +769,24 @@ export default function IntelligencePage() {
         setCacheTimestamp(Date.now());
         setCacheSource("local");
         void apiFetch("/api/intelligence?action=cache-save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scanType: "full", result: data.data }) });
+        // A3: auto-bank signals scoring 90+
+        const highValue = data.data.trends.filter((t) => t.monetizationScore >= 90);
+        if (highValue.length > 0) {
+          let banked = 0;
+          await Promise.allSettled(highValue.map(async (trend) => {
+            const r = await apiFetch("/api/signals?action=bank", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(trend) });
+            const d = await r.json() as { success: boolean; data?: { alreadySaved?: boolean } };
+            if (d.success && !d.data?.alreadySaved) banked++;
+          }));
+          if (banked > 0) setAutobankedCount(banked);
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to run scan");
     } finally {
       setLoading(false);
+      clearTimeout(slowTimer);
+      setSlowWarning(false);
     }
   }
 
@@ -760,7 +804,7 @@ export default function IntelligencePage() {
             loading={loading}
             onClick={runScan}
           >
-            {loading ? "Scanning..." : "Run Intelligence Scan"}
+            {loading ? (slowWarning ? "Still working..." : "Scanning... (~20s)") : "Run Intelligence Scan"}
           </Button>
         }
       />
@@ -907,6 +951,20 @@ export default function IntelligencePage() {
             </div>
           </CardBody>
         </Card>
+
+        {/* A5: Slow-call warning */}
+        {slowWarning && loading && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16, padding: "10px 16px", borderRadius: 10, background: "var(--amber-bg)", border: "1px solid var(--amber-border)", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: "0.875rem", color: "var(--amber)" }}>⏳ This is taking longer than expected. Claude is thinking hard — hang tight.</span>
+          </motion.div>
+        )}
+
+        {/* A3: Auto-bank toast */}
+        {autobankedCount !== null && (
+          <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: 16, padding: "10px 16px", borderRadius: 10, background: "var(--emerald-bg)", border: "1px solid var(--emerald-border)", display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: "0.875rem", color: "var(--emerald)" }}>✓ {autobankedCount} high-value signal{autobankedCount !== 1 ? "s" : ""} auto-banked (scored 90+)</span>
+          </motion.div>
+        )}
 
         {/* Error */}
         {error && (

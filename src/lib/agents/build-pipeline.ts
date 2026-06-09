@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import { generateProductBlueprint } from "@/lib/ai/product-engine";
-import { generateOptimizedListing } from "@/lib/ai/listing-seo-engine";
+import { generateOptimizedListing, scoreListingQuality } from "@/lib/ai/listing-seo-engine";
 import { generateProductPdf } from "@/lib/services/pdf-service";
 import { generateProductCoverImage, generateProductMockups } from "@/lib/services/image-service";
 import { publishProductToEtsy } from "@/lib/services/etsy-publish-service";
@@ -86,12 +86,24 @@ export async function runBuildPipeline(cardId: string): Promise<void> {
         markFailed("cover_image", err instanceof Error ? err.message : "Cover image failed");
       });
 
-    // Stage 4: SEO optimize (non-fatal)
+    // Stage 4: SEO optimize — B5: enforce quality score >= 75
     await generateOptimizedListing(blueprint, [card.primaryKeyword])
       .then(async (optimized) => {
+        let finalListing = optimized;
+        const qualityScore = scoreListingQuality(optimized);
+        if (qualityScore < 75) {
+          // Regenerate once if quality is too low
+          const retry = await generateOptimizedListing(blueprint, [card.primaryKeyword]).catch(() => optimized);
+          const retryScore = scoreListingQuality(retry);
+          if (retryScore > qualityScore) finalListing = retry;
+        }
+        const finalScore = scoreListingQuality(finalListing);
         await prisma.product.update({
           where: { id: product.id },
-          data: { optimizedListing: optimized as unknown as Prisma.InputJsonValue },
+          data: {
+            optimizedListing: finalListing as unknown as Prisma.InputJsonValue,
+            listingQualityScore: finalScore,
+          },
         });
         markDone("seo_optimize");
       })
