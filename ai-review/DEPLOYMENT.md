@@ -1,5 +1,24 @@
 # Deployment Guide — Alpha & Omega
 
+## Production URLs
+
+| Resource | URL / Value |
+|----------|-------------|
+| App | `https://alpha-and-omega-c9dr.vercel.app` |
+| Vercel project | `matt-charmello-s-projects/alpha-and-omega-c9dr` |
+| GitHub repo | `https://github.com/mattcharms9/Alpha-and-omega.git` |
+| Neon DB | `ep-crimson-block-aqkbq1ba.c-8.us-east-1.aws.neon.tech` |
+| First deploy | 2026-06-09 (Session 025) |
+| Agent cron | `0 2 * * *` UTC — fires nightly, generates LaunchCards |
+
+**Key env var notes:**
+- `API_SECRET_KEY` / `NEXT_PUBLIC_API_KEY` are set to the local dev value `alpha-omega-local-dev-key` — upgrade to a random hex32 before sharing the URL publicly
+- `CRON_SECRET` was reset to a known value on 2026-06-09; local `.env` updated to match
+- `AGENT_DAILY_COST_LIMIT_USD=2.00` set on Vercel; estimated real cost $0.25–$1.20/day
+- Hobby plan cron limit: all schedules must be ≤ once/day (process-pin-queue and daily-reminder downgraded)
+
+---
+
 ## Database
 
 **Local development:** SQLite via `@prisma/adapter-better-sqlite3`. Zero setup — just run `npx prisma db push`.

@@ -1,5 +1,22 @@
 # Alpha & Omega — Operational Status
-**Last Updated:** 2026-06-08 (Session 024 — Platform health audit, Etsy OAuth confirmed live)
+**Last Updated:** 2026-06-09 (Session 025 — Production deployment complete, 2am cron live)
+
+---
+
+## Production Deployment
+
+| Item | Status |
+|------|--------|
+| GitHub repo | ✅ Pushed — `https://github.com/mattcharms9/Alpha-and-omega.git` |
+| Vercel deployment | ✅ Live — `https://alpha-and-omega-c9dr.vercel.app` |
+| Neon PostgreSQL | ✅ Connected — `ep-crimson-block-aqkbq1ba.c-8.us-east-1.aws.neon.tech` |
+| DB migration | ✅ Applied — all tables synced |
+| Vercel Blob storage | ✅ Connected — `BLOB_READ_WRITE_TOKEN` set |
+| Cron jobs registered | ✅ 11 crons (all daily-or-less for Hobby plan) |
+| First agent run | ✅ Triggered manually — `isColdStart: true`, cost $0.25, 95s |
+| 2am UTC agent cron | ✅ Will fire tonight automatically |
+
+**Cron schedule note:** `daily-reminder` runs at 21:00 UTC (fixed, Hobby plan); `process-pin-queue` runs at 12:00 UTC daily. Upgrade to Vercel Pro to restore hourly/every-30min schedules.
 
 ---
 
