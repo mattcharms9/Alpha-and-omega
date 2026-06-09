@@ -11,7 +11,7 @@ export const ETSY_SCOPES = [
   "email_r",
 ].join(" ");
 
-// ── PKCE helpers ─────────────────────────────────────────────────────────────
+// ── PKCE helpers ──────────────────────────────────────────────────────────────
 
 export function generateCodeVerifier(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
@@ -32,6 +32,30 @@ export async function generateCodeChallenge(verifier: string): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", data);
   return btoa(String.fromCharCode(...new Uint8Array(digest)))
     .replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+}
+
+// ── API key — single source of truth ─────────────────────────────────────────
+
+/**
+ * Returns the Etsy App Key (Keystring) for use in x-api-key headers.
+ * Reads ETSY_API_KEY. Throws loudly if missing so misconfiguration is
+ * immediately obvious in logs — no silent undefined.
+ */
+export function getEtsyApiKey(): string {
+  const key = process.env.ETSY_API_KEY;
+  if (!key) throw new Error("ETSY_API_KEY env var is not set — add it in Vercel dashboard");
+  return key;
+}
+
+// ── Shared header builder — never construct inline ────────────────────────────
+
+export function buildEtsyHeaders(accessToken: string): Record<string, string> {
+  const apiKey = getEtsyApiKey();
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    "x-api-key": apiKey,
+    "Content-Type": "application/json",
+  };
 }
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -71,13 +95,6 @@ export interface EtsyTokenResponse {
   refresh_token: string;
 }
 
-export interface EtsyListingStats {
-  listing_id: number;
-  views: number;
-  num_favorers: number;
-  shares: number;
-}
-
 export interface CreateListingParams {
   title: string;
   description: string;
@@ -96,37 +113,41 @@ export interface EtsyTokenContext {
   connectionId: string;
 }
 
-// ── API helpers ───────────────────────────────────────────────────────────────
+// ── Core fetch helper ─────────────────────────────────────────────────────────
 
-/** Resolves the API key from either env var name so Vercel + local both work. */
-export function resolveEtsyApiKey(): string {
-  const key = process.env.ETSY_API_KEY ?? process.env.ETSY_CLIENT_ID;
-  if (!key) throw new Error("ETSY_API_KEY env var is not set");
-  return key;
-}
-
-async function etsyFetch(
+export async function etsyFetch(
   path: string,
   accessToken: string,
   options: RequestInit = {}
 ): Promise<Response> {
-  const clientId = resolveEtsyApiKey();
-
+  const headers = buildEtsyHeaders(accessToken);
   const res = await fetch(`${ETSY_BASE}${path}`, {
     ...options,
     headers: {
-      "x-api-key": clientId,
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
+      ...headers,
+      // Allow caller to override Content-Type (e.g. for multipart)
       ...(options.headers as Record<string, string> ?? {}),
     },
   });
 
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw new Error(`Etsy API error ${res.status}: ${text}`);
+    throw new Error(`Etsy API ${res.status} on ${path}: ${text}`);
   }
   return res;
+}
+
+// ── API functions ─────────────────────────────────────────────────────────────
+
+export async function getEtsyUser(accessToken: string): Promise<{ user_id: number; login_name: string }> {
+  const res = await etsyFetch("/application/users/me", accessToken);
+  return res.json() as Promise<{ user_id: number; login_name: string }>;
+}
+
+export async function getEtsyShop(accessToken: string, userId: number): Promise<EtsyShop> {
+  const res = await etsyFetch(`/application/users/${userId}/shops`, accessToken);
+  const data = await res.json() as EtsyShop | { results: EtsyShop[] };
+  return "shop_id" in data ? data : (data as { results: EtsyShop[] }).results[0];
 }
 
 export async function getShop(accessToken: string, shopId: string): Promise<EtsyShop> {
@@ -154,25 +175,20 @@ export async function uploadListingFile(
   filename: string
 ): Promise<EtsyFileResponse> {
   const formData = new FormData();
-  const blob = new Blob([new Uint8Array(fileBuffer)], { type: "application/pdf" });
-  formData.append("file", blob, filename);
+  formData.append("file", new Blob([new Uint8Array(fileBuffer)], { type: "application/pdf" }), filename);
 
-  const clientId = resolveEtsyApiKey();
-
+  const apiKey = getEtsyApiKey();
   const res = await fetch(
     `${ETSY_BASE}/application/shops/${shopId}/listings/${listingId}/files`,
     {
       method: "POST",
-      headers: {
-        "x-api-key": clientId,
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: { "x-api-key": apiKey, Authorization: `Bearer ${accessToken}` },
       body: formData,
     }
   );
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw new Error(`Etsy file upload error ${res.status}: ${text}`);
+    throw new Error(`Etsy file upload ${res.status}: ${text}`);
   }
   return res.json() as Promise<EtsyFileResponse>;
 }
@@ -184,42 +200,32 @@ export async function uploadListingImage(
   imageBuffer: Buffer,
   filename: string
 ): Promise<EtsyImageResponse> {
-  const formData = new FormData();
   const ext = filename.split(".").pop()?.toLowerCase() ?? "png";
   const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : "image/png";
-  const blob = new Blob([new Uint8Array(imageBuffer)], { type: mimeType });
-  formData.append("image", blob, filename);
+  const formData = new FormData();
+  formData.append("image", new Blob([new Uint8Array(imageBuffer)], { type: mimeType }), filename);
 
-  const clientId = resolveEtsyApiKey();
-
+  const apiKey = getEtsyApiKey();
   const res = await fetch(
     `${ETSY_BASE}/application/shops/${shopId}/listings/${listingId}/images`,
     {
       method: "POST",
-      headers: {
-        "x-api-key": clientId,
-        Authorization: `Bearer ${accessToken}`,
-      },
+      headers: { "x-api-key": apiKey, Authorization: `Bearer ${accessToken}` },
       body: formData,
     }
   );
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw new Error(`Etsy image upload error ${res.status}: ${text}`);
+    throw new Error(`Etsy image upload ${res.status}: ${text}`);
   }
   return res.json() as Promise<EtsyImageResponse>;
 }
 
-export async function activateListing(
-  accessToken: string,
-  shopId: string,
-  listingId: string
-): Promise<EtsyListingResponse> {
-  const res = await etsyFetch(
-    `/application/shops/${shopId}/listings/${listingId}`,
-    accessToken,
-    { method: "PATCH", body: JSON.stringify({ state: "active" }) }
-  );
+export async function activateListing(accessToken: string, shopId: string, listingId: string): Promise<EtsyListingResponse> {
+  const res = await etsyFetch(`/application/shops/${shopId}/listings/${listingId}`, accessToken, {
+    method: "PATCH",
+    body: JSON.stringify({ state: "active" }),
+  });
   return res.json() as Promise<EtsyListingResponse>;
 }
 
@@ -229,24 +235,15 @@ export async function updateListing(
   listingId: string,
   params: Partial<CreateListingParams>
 ): Promise<EtsyListingResponse> {
-  const res = await etsyFetch(
-    `/application/shops/${shopId}/listings/${listingId}`,
-    accessToken,
-    { method: "PATCH", body: JSON.stringify(params) }
-  );
+  const res = await etsyFetch(`/application/shops/${shopId}/listings/${listingId}`, accessToken, {
+    method: "PATCH",
+    body: JSON.stringify(params),
+  });
   return res.json() as Promise<EtsyListingResponse>;
 }
 
-export async function deleteListing(
-  accessToken: string,
-  shopId: string,
-  listingId: string
-): Promise<void> {
-  await etsyFetch(
-    `/application/shops/${shopId}/listings/${listingId}`,
-    accessToken,
-    { method: "DELETE" }
-  );
+export async function deleteListing(accessToken: string, shopId: string, listingId: string): Promise<void> {
+  await etsyFetch(`/application/shops/${shopId}/listings/${listingId}`, accessToken, { method: "DELETE" });
 }
 
 export async function getShopListings(
@@ -264,32 +261,25 @@ export async function getShopListings(
 }
 
 export async function refreshEtsyToken(refreshToken: string): Promise<EtsyTokenResponse> {
-  const clientId = resolveEtsyApiKey();
-
+  const apiKey = getEtsyApiKey();
   const res = await fetch("https://api.etsy.com/v3/public/oauth/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "refresh_token",
-      client_id: clientId,
+      client_id: apiKey,
       refresh_token: refreshToken,
     }),
   });
-
   if (!res.ok) {
     const text = await res.text().catch(() => res.statusText);
-    throw new Error(`Etsy token refresh failed ${res.status}: ${text}`);
+    throw new Error(`Etsy token refresh ${res.status}: ${text}`);
   }
   return res.json() as Promise<EtsyTokenResponse>;
 }
 
 // ── Token management ──────────────────────────────────────────────────────────
 
-/**
- * Returns a valid token+shopId for the active Etsy connection, refreshing
- * automatically if expired. On unrecoverable refresh failure, deactivates
- * the connection and creates a StrategicAlert.
- */
 export async function getValidEtsyToken(): Promise<EtsyTokenContext> {
   const connection = await prisma.etsyConnection.findFirst({ where: { isActive: true } });
   if (!connection) throw new Error("No Etsy shop connected");
@@ -298,47 +288,33 @@ export async function getValidEtsyToken(): Promise<EtsyTokenContext> {
     return { token: connection.accessToken, shopId: connection.shopId, connectionId: connection.id };
   }
 
-  log({ level: "info", route: "/lib/integrations/etsy", action: "token-refresh", status: 200 });
+  log({ level: "info", route: "etsy", action: "token-refresh", status: 200 });
 
   try {
     const tokenData = await refreshEtsyToken(connection.refreshToken);
     const expiry = new Date(Date.now() + tokenData.expires_in * 1000);
     await prisma.etsyConnection.update({
       where: { id: connection.id },
-      data: {
-        accessToken: tokenData.access_token,
-        refreshToken: tokenData.refresh_token,
-        tokenExpiry: expiry,
-      },
+      data: { accessToken: tokenData.access_token, refreshToken: tokenData.refresh_token, tokenExpiry: expiry },
     });
     return { token: tokenData.access_token, shopId: connection.shopId, connectionId: connection.id };
   } catch (err) {
-    // Deactivate the connection so UI shows "not connected" and prompts reconnect
-    await prisma.etsyConnection.update({
-      where: { id: connection.id },
-      data: { isActive: false },
-    }).catch(() => {});
-
-    // Non-fatal alert so Matt knows to reconnect
+    await prisma.etsyConnection.update({ where: { id: connection.id }, data: { isActive: false } }).catch(() => {});
     await prisma.strategicAlert.create({
       data: {
         type: "risk",
         title: "Etsy Token Expired",
-        body: "Your Etsy access token could not be refreshed. Go to Publishing and reconnect your shop.",
+        body: "Etsy access token could not be refreshed. Go to Publishing and reconnect your Etsy shop.",
         actionLabel: "Reconnect",
         actionHref: "/publishing",
       },
     }).catch(() => {});
-
-    const msg = err instanceof Error ? err.message : "Unknown error";
-    throw new Error(`Etsy token refresh failed — please reconnect your shop (${msg})`);
+    const msg = err instanceof Error ? err.message : "unknown";
+    throw new Error(`Etsy token refresh failed — reconnect your shop (${msg})`);
   }
 }
 
-/** Convenience wrapper for callers that only need a single API call. */
-export async function withEtsyToken<T>(
-  fn: (token: string, shopId: string) => Promise<T>
-): Promise<T> {
+export async function withEtsyToken<T>(fn: (token: string, shopId: string) => Promise<T>): Promise<T> {
   const { token, shopId } = await getValidEtsyToken();
   return fn(token, shopId);
 }

@@ -2,14 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { toSafeErrorMessage } from "@/lib/errors";
 import { rateLimit } from "@/lib/rate-limit";
+import { buildOAuthState, extractVerifierFromState } from "@/lib/etsy-state";
 import {
-  buildOAuthState,
-  extractVerifierFromState,
-} from "@/lib/etsy-state";
-import {
+  getEtsyApiKey,
+  getEtsyUser,
+  getEtsyShop,
   generateCodeVerifier,
   generateCodeChallenge,
-  resolveEtsyApiKey,
   ETSY_SCOPES,
   withEtsyToken,
   getShopListings,
@@ -23,33 +22,40 @@ const ETSY_TOKEN_URL = "https://api.etsy.com/v3/public/oauth/token";
 
 export async function GET(req: NextRequest) {
   const reqUrl = new URL(req.url);
-  const { searchParams } = reqUrl;
-  const action = searchParams.get("action");
+  const action = reqUrl.searchParams.get("action");
+  const base = `${reqUrl.protocol}//${reqUrl.host}`;
 
-  // ── OAuth callback from Etsy ───────────────────────────────────────────────
+  // ── OAuth callback (public — no API key needed) ───────────────────────────
   if (action === "callback") {
-    const base = `${reqUrl.protocol}//${reqUrl.host}`;
-    const code = searchParams.get("code");
-    const returnedState = searchParams.get("state");
-    const etsyError = searchParams.get("error");
+    const code = reqUrl.searchParams.get("code");
+    const returnedState = reqUrl.searchParams.get("state");
+    const etsyErr = reqUrl.searchParams.get("error");
 
-    if (etsyError) return cbError(base, `Etsy denied: ${etsyError}`);
-    if (!code) return cbError(base, "No auth code — check redirect_uri in Etsy developer portal");
-    if (!returnedState) return cbError(base, "No state returned from Etsy");
+    if (etsyErr) {
+      console.error("[etsy callback] Etsy returned error:", etsyErr);
+      return err(base, `Etsy denied access: ${etsyErr}`);
+    }
+    if (!code) return err(base, "No authorization code — check redirect_uri in Etsy developer portal");
+    if (!returnedState) return err(base, "No state parameter returned from Etsy");
 
+    // Verifier is AES-encrypted inside the state — no cookie or DB needed
     const verifier = extractVerifierFromState(returnedState);
-    if (!verifier) return cbError(base, "Invalid OAuth state — please try connecting again");
+    if (!verifier) return err(base, "Invalid OAuth state — please try connecting again");
 
     let apiKey: string;
-    try { apiKey = resolveEtsyApiKey(); } catch {
-      return cbError(base, "ETSY_API_KEY env var not set on this server");
+    try {
+      apiKey = getEtsyApiKey();
+    } catch {
+      return err(base, "ETSY_API_KEY is not configured on this server");
     }
-    const redirectUri = process.env.ETSY_REDIRECT_URI;
-    if (!redirectUri) return cbError(base, "ETSY_REDIRECT_URI env var not set");
 
-    console.log("[etsy callback] api key prefix:", apiKey.slice(0, 8), "redirect_uri:", redirectUri);
+    const redirectUri = process.env.ETSY_REDIRECT_URI;
+    if (!redirectUri) return err(base, "ETSY_REDIRECT_URI is not configured on this server");
+
+    console.log("[etsy callback] api_key_prefix:", apiKey.slice(0, 8), "redirect_uri:", redirectUri);
 
     try {
+      // 1. Exchange code for tokens
       const tokenRes = await fetch(ETSY_TOKEN_URL, {
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -63,87 +69,110 @@ export async function GET(req: NextRequest) {
       });
 
       if (!tokenRes.ok) {
-        const err = await tokenRes.text().catch(() => "");
-        console.error("[etsy callback] token exchange failed:", tokenRes.status, err);
-        return cbError(base, `Token exchange failed (${tokenRes.status}: ${err.slice(0, 200)})`);
+        const body = await tokenRes.text().catch(() => "");
+        console.error("[etsy callback] token exchange failed:", tokenRes.status, body);
+        return err(base, `Token exchange failed (${tokenRes.status}: ${body.slice(0, 200)})`);
       }
 
       const tokenData = await tokenRes.json() as {
-        access_token: string; refresh_token: string; expires_in: number; user_id?: string | number;
+        access_token: string;
+        refresh_token: string;
+        expires_in: number;
+        user_id?: number;
       };
-      console.log("[etsy callback] token exchange success, fetching user identity...");
+      console.log("[etsy callback] token exchange success");
 
-      const etsyHeaders = {
-        Authorization: `Bearer ${tokenData.access_token}`,
-        "x-api-key": apiKey,
-      };
-
-      // Try token payload first, then /users/me
-      let userId: string | number | undefined = tokenData.user_id ?? jwtUserId(tokenData.access_token);
-      if (!userId) {
-        const meRes = await fetch("https://openapi.etsy.com/v3/application/users/me", { headers: etsyHeaders });
-        if (!meRes.ok) {
-          const err = await meRes.text().catch(() => "");
-          console.error("[etsy callback] /users/me failed:", meRes.status, err);
-          return cbError(base, `Could not identify Etsy user (${meRes.status}: ${err.slice(0, 120)})`);
-        }
-        const meData = await meRes.json() as { user_id?: string | number; login_name?: string };
-        userId = meData.user_id;
-        console.log("[etsy callback] user identified:", meData.user_id, meData.login_name);
-      } else {
+      // 2. Identify user — getEtsyUser uses buildEtsyHeaders which always
+      //    reads ETSY_API_KEY fresh from process.env at call time
+      let userId: number;
+      let loginName = "";
+      if (tokenData.user_id) {
+        userId = tokenData.user_id;
         console.log("[etsy callback] user_id from token:", userId);
-      }
-      if (!userId) return cbError(base, "Could not identify Etsy user — no user_id in token or /users/me response");
-
-      const shopsRes = await fetch(
-        `https://openapi.etsy.com/v3/application/users/${userId}/shops`,
-        { headers: etsyHeaders }
-      );
-      if (!shopsRes.ok) {
-        const err = await shopsRes.text().catch(() => "");
-        console.error("[etsy callback] shops failed:", shopsRes.status, err);
-        return cbError(base, `Could not fetch shop info (${shopsRes.status}: ${err.slice(0, 120)})`);
+      } else {
+        const userData = await getEtsyUser(tokenData.access_token);
+        userId = userData.user_id;
+        loginName = userData.login_name ?? "";
+        console.log("[etsy callback] user identified:", userId, loginName);
       }
 
-      type ShopObj = { shop_id: number; shop_name: string; url: string; currency_code: string };
-      const shopsData = await shopsRes.json() as ShopObj | { results: ShopObj[] };
-      const shop: ShopObj | undefined =
-        "shop_id" in shopsData ? shopsData : (shopsData as { results: ShopObj[] }).results?.[0];
-      if (!shop) return cbError(base, "No Etsy shop found on this account");
+      // 3. Fetch shop
+      let shopId = String(userId);
+      let shopName = loginName;
+      let shopUrl = `https://www.etsy.com/shop/${loginName}`;
+      let currencyCode = "USD";
+      try {
+        const shop = await getEtsyShop(tokenData.access_token, userId);
+        shopId = String(shop.shop_id);
+        shopName = shop.shop_name;
+        shopUrl = shop.url;
+        currencyCode = shop.currency_code ?? "USD";
+        console.log("[etsy callback] shop identified:", shopId, shopName);
+      } catch (shopErr) {
+        console.error("[etsy callback] shop fetch failed (non-fatal), using userId as fallback:", shopErr);
+      }
 
-      console.log("[etsy callback] shop identified:", shop.shop_id, shop.shop_name);
-
+      // 4. Save connection
+      const expiry = new Date(Date.now() + tokenData.expires_in * 1000);
       await prisma.etsyConnection.upsert({
-        where: { shopId: String(shop.shop_id) },
+        where: { shopId },
         create: {
-          shopId: String(shop.shop_id),
-          shopName: shop.shop_name,
-          shopUrl: shop.url,
+          shopId,
+          shopName,
+          shopUrl,
           accessToken: tokenData.access_token,
           refreshToken: tokenData.refresh_token,
-          tokenExpiry: new Date(Date.now() + tokenData.expires_in * 1000),
-          currencyCode: shop.currency_code ?? "USD",
+          tokenExpiry: expiry,
+          currencyCode,
           isActive: true,
         },
         update: {
-          shopName: shop.shop_name,
-          shopUrl: shop.url,
+          shopName,
+          shopUrl,
           accessToken: tokenData.access_token,
           refreshToken: tokenData.refresh_token,
-          tokenExpiry: new Date(Date.now() + tokenData.expires_in * 1000),
+          tokenExpiry: expiry,
           isActive: true,
         },
       });
 
-      console.log("[etsy callback] connection saved, redirecting to /publishing");
+      console.log("[etsy callback] connection saved — redirecting to /publishing");
       return NextResponse.redirect(`${base}/publishing?connected=etsy`);
-    } catch {
-      return cbError(base, "OAuth flow failed");
+    } catch (e) {
+      console.error("[etsy callback] unhandled error:", e);
+      return err(base, "OAuth flow failed — check Vercel logs for details");
     }
   }
 
-  // ── Protected actions (require x-api-key via proxy) ───────────────────────
+  // ── Protected GET actions (require x-api-key header via proxy) ───────────
   try {
+    if (action === "connect") {
+      let apiKey: string;
+      try { apiKey = getEtsyApiKey(); } catch {
+        return NextResponse.json({ success: false, error: "ETSY_API_KEY env var not configured" }, { status: 500 });
+      }
+      const redirectUri = process.env.ETSY_REDIRECT_URI;
+      if (!redirectUri) {
+        return NextResponse.json({ success: false, error: "ETSY_REDIRECT_URI env var not configured" }, { status: 500 });
+      }
+
+      const verifier = generateCodeVerifier();
+      const challenge = await generateCodeChallenge(verifier);
+      const state = buildOAuthState(verifier);
+
+      const params = new URLSearchParams({
+        response_type: "code",
+        client_id: apiKey,
+        redirect_uri: redirectUri,
+        scope: ETSY_SCOPES,
+        state,
+        code_challenge: challenge,
+        code_challenge_method: "S256",
+      });
+
+      return NextResponse.json({ success: true, data: { authUrl: `${ETSY_AUTH_BASE}?${params.toString()}` } });
+    }
+
     if (action === "status") {
       const conn = await prisma.etsyConnection.findFirst({ where: { isActive: true } });
       if (!conn) return NextResponse.json({ success: true, data: { connected: false } });
@@ -165,22 +194,6 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, data: listings });
     }
 
-    if (action === "connect") {
-      let apiKey: string;
-      try { apiKey = resolveEtsyApiKey(); } catch {
-        return NextResponse.json({ success: false, error: "ETSY_API_KEY env var not configured" }, { status: 500 });
-      }
-      const redirectUri = process.env.ETSY_REDIRECT_URI;
-      if (!redirectUri) {
-        return NextResponse.json({ success: false, error: "ETSY_REDIRECT_URI env var not configured" }, { status: 500 });
-      }
-      const verifier = generateCodeVerifier();
-      const challenge = await generateCodeChallenge(verifier);
-      const state = buildOAuthState(verifier);
-      const authUrl = `${ETSY_AUTH_BASE}?response_type=code&client_id=${apiKey}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(ETSY_SCOPES)}&state=${encodeURIComponent(state)}&code_challenge=${challenge}&code_challenge_method=S256`;
-      return NextResponse.json({ success: true, data: { authUrl } });
-    }
-
     return NextResponse.json({ success: false, error: "Unknown action" }, { status: 400 });
   } catch (error) {
     const { message, status } = toSafeErrorMessage(error);
@@ -194,12 +207,9 @@ const DisconnectSchema = z.object({});
 
 export async function POST(req: NextRequest) {
   const rl = rateLimit(req, { limit: 10, windowMs: 60_000 });
-  if (!rl.success) {
-    return NextResponse.json({ success: false, error: "Too many requests" }, { status: 429 });
-  }
+  if (!rl.success) return NextResponse.json({ success: false, error: "Too many requests" }, { status: 429 });
 
-  const { searchParams } = new URL(req.url);
-  const action = searchParams.get("action");
+  const action = new URL(req.url).searchParams.get("action");
 
   try {
     if (action === "disconnect") {
@@ -217,12 +227,11 @@ export async function POST(req: NextRequest) {
       if (!conn) return NextResponse.json({ success: false, error: "Not connected" }, { status: 400 });
 
       const listings = await prisma.etsyListing.findMany({
-        where: { connectionId: conn.id, status: "active" },
-        take: 10,
+        where: { connectionId: conn.id, status: "active" }, take: 10,
       });
 
-      const results = await withEtsyToken(async (token) => {
-        return Promise.allSettled(
+      const results = await withEtsyToken(async (token) =>
+        Promise.allSettled(
           listings.map(async (listing) => {
             const remote = await getShopListings(token, conn.shopId, 1);
             const match = remote.find((l) => String(l.listing_id) === listing.etsyListingId);
@@ -233,8 +242,8 @@ export async function POST(req: NextRequest) {
               });
             }
           })
-        );
-      });
+        )
+      );
 
       await prisma.etsyConnection.update({ where: { id: conn.id }, data: { lastSyncAt: new Date() } });
       return NextResponse.json({ success: true, data: { synced: results.length } });
@@ -247,20 +256,8 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Internal ──────────────────────────────────────────────────────────────────
 
-function cbError(base: string, msg: string): NextResponse {
+function err(base: string, msg: string): NextResponse {
   return NextResponse.redirect(`${base}/publishing?etsy_error=${encodeURIComponent(msg)}`);
-}
-
-function jwtUserId(token: string): string | undefined {
-  try {
-    const payload = token.split(".")[1];
-    if (!payload) return undefined;
-    const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, unknown>;
-    const id = decoded.user_id ?? decoded.userId ?? decoded.sub;
-    return id != null ? String(id) : undefined;
-  } catch {
-    return undefined;
-  }
 }
