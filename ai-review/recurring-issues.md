@@ -172,6 +172,28 @@ with Next.js App Router's server-side rendering. Common issues:
 
 ---
 
+## RI-013: OAuth Proxy Exemptions Must Use Full Path Including Query String
+
+**First seen:** Session 023 (Etsy OAuth)
+**Pattern:** `req.nextUrl.pathname` strips query parameters. `PUBLIC_API_PATHS` entries like `"/api/etsy?action=callback"` never match against `pathname` alone — the callback gets a 401 from the API key check even though it's in the allowlist.
+
+**Fix applied in proxy.ts:** `const fullPath = pathname + req.nextUrl.search;` — check both `fullPath.startsWith(p)` and `pathname.startsWith(p)` so query-param entries AND plain path entries both match.
+
+**Prevention:** When adding any OAuth callback, add it to `PUBLIC_API_PATHS` with the full query string AND verify the proxy uses `fullPath`.
+
+---
+
+## RI-014: Env Var Renames Must Be Synced to Vercel Dashboard Immediately
+
+**First seen:** Sessions 023–024 (ETSY_CLIENT_ID → ETSY_API_KEY rename)
+**Pattern:** Renaming an env var in code and `.env` only works locally. Vercel keeps serving the old name, so the header sends `undefined`, causing 403s from third-party APIs that look like auth failures — not obvious config errors.
+
+**Fix:** After any env var rename: update Vercel dashboard the same session. Never silently fall back to `undefined` — `getEtsyApiKey()` now throws loudly if the var is missing.
+
+**Prevention:** Deployment checklist must include "update Vercel env var name in dashboard" after any rename.
+
+---
+
 ## Prevention Checklist
 
 Before submitting code for review, verify:

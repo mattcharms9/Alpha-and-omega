@@ -4,6 +4,35 @@ Chronological log of all review sessions with findings and resolutions.
 
 ---
 
+## Review Session 024 — Platform Health Audit + Etsy OAuth Final Confirmation
+**Date:** 2026-06-08
+**Focus:** Confirm all Session 023 Etsy fixes are correct; full audit of every integration, proxy, cron, and env var
+**Files Changed:** 5 (recurring-issues, technical-debt, repository-summary, review-history, STATUS.md)
+**Build Status:** ✅ Passing — 0 TypeScript errors, 0 build errors
+
+### Audit Findings — All Green
+- **Proxy** ✅ Already uses `fullPath = pathname + search` — query-param exemptions work
+- **AES state** ✅ `etsy-state.ts` correct — AES-256-GCM, HMAC-signed, no cookies
+- **Callback route** ✅ Old `/api/etsy/callback` path forwards to `?action=callback`
+- **Publishing page** ✅ Uses `apiFetch` → gets authUrl → `window.location.href` (correct redirect flow)
+- **Gumroad webhook** ✅ Raw body HMAC-SHA256 verified before processing
+- **Pinterest token refresh** ✅ `getValidPinterestToken()` with refresh + StrategicAlert
+- **Cron auth** ✅ All 11 cron routes verify CRON_SECRET
+- **Schema** ✅ `npx prisma validate` passes
+
+### Issues Found and Fixed
+- `CRON_SECRET` empty in local `.env` → set to dev placeholder (crons need it locally)
+- TD-019 marked ✅ Done — Etsy integration is now live
+
+### What Requires Manual Action on Vercel
+1. Add `ETSY_API_KEY = 5dhn35sxlgca5srboe3l9sr8` (renamed from ETSY_CLIENT_ID)
+2. Update `ETSY_REDIRECT_URI = https://alpha-and-omega-c9dr.vercel.app/api/etsy?action=callback`
+3. Set `CRON_SECRET` to any strong random string
+4. Verify `AUTH_SECRET` matches local `.env` (needed for AES state decryption)
+5. Register `https://alpha-and-omega-c9dr.vercel.app/api/etsy?action=callback` in Etsy developer portal
+
+---
+
 ## Review Session 023 — Etsy OAuth Comprehensive Repair
 **Date:** 2026-06-08
 **Focus:** Full diagnostic + fix of broken Etsy OAuth PKCE flow; publish pipeline token issues

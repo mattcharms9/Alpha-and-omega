@@ -124,7 +124,7 @@
     "resend": "live — sale alerts + daily brief + buyer email list",
     "twilio": "live — SMS accountability reminders",
     "webpush": "live — browser push notifications via VAPID",
-    "etsy": "not built — critical gap (primary revenue channel)",
+    "etsy": "live — OAuth 2.0 PKCE (AES state), publish SSE, token auto-refresh, sale webhook, analytics sync",
     "stripe": "not built — planned for SaaS billing"
   },
   "pages": [
@@ -215,11 +215,11 @@
     "buildStatus": "passing",
     "pageCount": 45,
     "typescriptErrors": 0,
-    "lastBuildDate": "2026-05-27",
-    "lastBuildSession": 12
+    "lastBuildDate": "2026-06-08",
+    "lastBuildSession": 24
   },
   "openGaps": {
-    "critical": ["TD-018_pdf_api_route_pending", "TD-019_no_etsy_integration"],
+    "critical": ["TD-018_pdf_api_route_pending"],
     "high": ["TD-006_no_job_queue"],
     "medium": ["TD-016_rate_limiter_in_memory", "TD-017_nextauth_no_db_adapter", "SEC-004_no_csrf", "SEC-008_no_csp"],
     "low": ["TD-013_pinterest_image_hosting", "SEC-013_pinterest_token_refresh", "TD-022_games_calendar_date_drift"]

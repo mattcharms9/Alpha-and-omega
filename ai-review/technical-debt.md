@@ -139,14 +139,12 @@ Journal, planner, and workbook templates still needed.
 
 ---
 
-### TD-019 🔴 Etsy OAuth + Listing Publisher Not Implemented
-**File:** N/A — not yet built
+### TD-019 ✅ Etsy OAuth + Listing Publisher — DONE (Sessions 022–024)
+**File:** `src/app/api/etsy/route.ts`, `src/lib/integrations/etsy.ts`, `src/lib/etsy-state.ts`
 
-**Problem:** Etsy is the primary intended revenue channel. Publishing UI on `/publishing` is static — no actual Etsy listings can be created. All "publish to Etsy" buttons are non-functional.
+**What was built:** Full Etsy OAuth 2.0 PKCE flow with AES-256-GCM encrypted state (no cookies); `EtsyConnection` model; `/api/etsy?action=connect/callback/status/disconnect/sync`; `/api/etsy/publish` SSE streaming (draft → upload PDF → upload image → activate); sale webhook → RevenueRecord; Publishing Command Center with shop badge + listing analytics. Token auto-refresh with StrategicAlert on failure.
 
-**Remediation:** Build Etsy OAuth 2.0 (PKCE flow). Create `EtsyConnection` Prisma model. Build `/api/etsy/route.ts` (connect/callback/status). Build `/api/etsy/publish/route.ts` (draft/upload-file/activate/sync). Build Etsy sale webhook → `RevenueRecord`. Add Etsy section to publishing page.
-
-**Effort:** High · **Priority:** Critical (primary revenue channel)
+**Resolved:** Session 024
 
 ---
 
@@ -189,4 +187,4 @@ See TD-014 (duplicate entry — consolidated above).
 | TD-016 | Infra — Rate limiter in-memory | 🟡 Medium | Low | Medium | Open |
 | TD-017 | Auth — Sessions not in DB | 🟡 Medium | Medium | Medium | Open |
 | TD-018 | Revenue — No PDF generation | 🔴 Critical | High | Critical | Open |
-| TD-019 | Revenue — No Etsy integration | 🔴 Critical | High | Critical | Open |
+| TD-019 | Revenue — Etsy integration | ✅ Done | — | — | Resolved S024 |
