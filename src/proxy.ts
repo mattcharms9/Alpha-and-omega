@@ -6,12 +6,13 @@ const PUBLIC_API_PATHS = [
   "/api/auth/",
   "/api/cron/",
   "/api/gumroad/webhook",
+  "/api/etsy?action=connect",
   "/api/etsy?action=callback",
   "/api/etsy/callback",
   "/api/etsy/webhook",
   "/api/billing?action=webhook",
-  "/api/pinterest?action=callback",
   "/api/pinterest?action=connect",
+  "/api/pinterest?action=callback",
 ];
 
 const PUBLIC_PAGE_PATHS = ["/login", "/signup", "/pricing", "/privacy-policy"];
