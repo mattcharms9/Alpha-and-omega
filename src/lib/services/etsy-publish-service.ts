@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db/prisma";
 import {
-  getValidEtsyToken,
+  getEtsyShopId,
   createDraftListing,
   uploadListingFile,
   uploadListingImage,
@@ -25,8 +25,7 @@ export async function publishProductToEtsy(productId: string): Promise<EtsyPubli
   if (!product.pdfPath) throw new Error("Generate PDF first");
   if (!product.coverImagePath) throw new Error("Generate cover image first");
 
-  // Single token fetch for the entire publish operation
-  const { token, shopId, connectionId } = await getValidEtsyToken();
+  const shopId = getEtsyShopId();
 
   const optimized = product.optimizedListing as OptimizedListing | null;
   const title = (optimized?.title ?? product.title).slice(0, 140);
@@ -34,36 +33,29 @@ export async function publishProductToEtsy(productId: string): Promise<EtsyPubli
   const tags = (optimized?.tags ?? (product.keywords as string[]).slice(0, 13)).map((t: string) => t.slice(0, 20));
   const price = (product.pricingStrategy as { digitalPrice?: number } | null)?.digitalPrice ?? 9.99;
 
-  const listing = await createDraftListing(token, shopId, {
-    title,
-    description,
-    price,
-    tags,
-    quantity: 999,
-    is_digital: true,
-    who_made: "i_did",
-    when_made: "2020_2024",
+  const listing = await createDraftListing(shopId, {
+    title, description, price, tags,
+    quantity: 999, is_digital: true,
+    who_made: "i_did", when_made: "2020_2024",
   });
 
   const listingId = String(listing.listing_id);
 
   const pdfBuffer = await readFile(join(process.cwd(), "public", product.pdfPath.replace(/^\//, "")));
-  await uploadListingFile(token, shopId, listingId, Buffer.from(pdfBuffer), `${product.title}.pdf`);
+  await uploadListingFile(shopId, listingId, Buffer.from(pdfBuffer), `${product.title}.pdf`);
 
   const imgBuffer = await readFile(join(process.cwd(), "public", product.coverImagePath!.replace(/^\//, "")));
-  await uploadListingImage(token, shopId, listingId, Buffer.from(imgBuffer), "cover.png");
+  await uploadListingImage(shopId, listingId, Buffer.from(imgBuffer), "cover.png");
 
-  await activateListing(token, shopId, listingId);
+  await activateListing(shopId, listingId);
 
   const expiry = new Date(Date.now() + 120 * 24 * 60 * 60 * 1000);
   await prisma.etsyListing.create({
     data: {
       productId,
-      connectionId,
+      connectionId: shopId,
       etsyListingId: listingId,
-      title,
-      description,
-      price,
+      title, description, price,
       tags: tags as unknown as Prisma.InputJsonValue,
       status: "active",
       publishedAt: new Date(),

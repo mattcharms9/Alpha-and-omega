@@ -6,7 +6,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import {
   ShoppingBag, Globe, Package, Send, RefreshCw,
   CheckCircle, AlertTriangle, ExternalLink, Clock,
-  Link2, ArrowRight, TrendingUp, Eye, Heart,
+  ArrowRight, TrendingUp, Eye, Heart,
 } from "lucide-react";
 import Link from "next/link";
 import { apiFetch } from "@/lib/api";
@@ -79,7 +79,7 @@ function RevenueBar({ revenue }: { revenue: RevenueData | null }) {
   );
 }
 
-function EtsyTab({ status, onConnect, connectError }: { status: EtsyStatus | null; onConnect: () => void; connectError?: string | null }) {
+function EtsyTab({ status, connectError }: { status: EtsyStatus | null; connectError?: string | null }) {
   const [listings, setListings] = useState<EtsyListing[]>([]);
   const [readyProducts, setReadyProducts] = useState<ReadyProduct[]>([]);
   const [publishing, setPublishing] = useState<string | null>(null);
@@ -127,13 +127,12 @@ function EtsyTab({ status, onConnect, connectError }: { status: EtsyStatus | nul
     return (
       <div style={{ padding: "3rem 2rem", textAlign: "center" }}>
         <ShoppingBag size={40} style={{ color: "var(--border-medium)", marginBottom: "1rem" }} />
-        <div style={{ fontSize: "var(--text-lg)", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.5rem" }}>Connect Your Etsy Shop</div>
-        <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginBottom: "1.5rem" }}>Connect your Etsy shop to publish digital products directly from Alpha & Omega.</div>
-        <button onClick={onConnect} style={{ padding: "0.625rem 1.5rem", borderRadius: "var(--radius-md)", background: "var(--text-primary)", color: "white", border: "none", cursor: "pointer", fontSize: "var(--text-sm)", fontWeight: 600, display: "inline-flex", alignItems: "center", gap: "0.375rem" }}>
-          <Link2 size={14} /> Connect Etsy Shop →
-        </button>
+        <div style={{ fontSize: "var(--text-lg)", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.5rem" }}>Etsy Not Configured</div>
+        <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginBottom: "1rem", maxWidth: 420, margin: "0 auto 1rem" }}>
+          Set <code>ETSY_API_KEY</code> and <code>ETSY_SHOP_ID</code> in your Vercel environment variables to enable Etsy publishing.
+        </div>
         {connectError && (
-          <div style={{ marginTop: "1rem", padding: "0.625rem 1rem", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "var(--radius-md)", fontSize: "var(--text-sm)", color: "#dc2626", maxWidth: 420, margin: "1rem auto 0" }}>
+          <div style={{ padding: "0.625rem 1rem", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "var(--radius-md)", fontSize: "var(--text-sm)", color: "#dc2626", maxWidth: 420, margin: "0 auto" }}>
             {connectError}
           </div>
         )}
@@ -290,11 +289,6 @@ function PublishingPageInner() {
 
   useEffect(() => { void loadStatus(); }, [loadStatus]);
 
-  function handleEtsyConnect() {
-    console.log("[etsy button] clicked, navigating to connect...");
-    window.location.href = "/api/etsy?action=connect";
-  }
-
   return (
     <div style={{ minHeight: "100vh", background: "var(--bg-page)" }}>
       {/* Header */}
@@ -361,7 +355,7 @@ function PublishingPageInner() {
       {/* Tab content */}
       <AnimatePresence mode="wait">
         <motion.div key={activeTab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-          {activeTab === "etsy" && <EtsyTab status={etsyStatus} onConnect={handleEtsyConnect} connectError={connectError} />}
+          {activeTab === "etsy" && <EtsyTab status={etsyStatus} connectError={connectError} />}
           {activeTab === "gumroad" && (
             <div style={{ padding: "1.5rem 2rem" }}>
               <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>

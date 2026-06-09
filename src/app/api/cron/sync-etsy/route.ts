@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { withEtsyToken, getShopListings } from "@/lib/integrations/etsy";
+import { getEtsyShopId, getShopListings } from "@/lib/integrations/etsy";
 
 // Schedule: 0 6 * * * (6am UTC daily)
 export async function GET(req: NextRequest) {
@@ -10,22 +10,20 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const conn = await prisma.etsyConnection.findFirst({ where: { isActive: true } });
-    if (!conn) return NextResponse.json({ success: true, data: { skipped: "no connection" } });
+    let shopId: string;
+    try { shopId = getEtsyShopId(); } catch {
+      return NextResponse.json({ success: true, data: { skipped: "ETSY_SHOP_ID not configured" } });
+    }
 
-    // Batch: first 10 active listings
     const listings = await prisma.etsyListing.findMany({
-      where: { connectionId: conn.id, status: "active" },
+      where: { status: "active" },
       take: 10,
       orderBy: { lastSyncAt: "asc" },
     });
 
     if (listings.length === 0) return NextResponse.json({ success: true, data: { synced: 0 } });
 
-    const remoteListings = await withEtsyToken((token, shopId) =>
-      getShopListings(token, shopId, 100, 0)
-    );
-
+    const remoteListings = await getShopListings(shopId, 100, 0);
     const remoteMap = new Map(remoteListings.map((l) => [String(l.listing_id), l]));
     let synced = 0;
 
@@ -45,7 +43,6 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    await prisma.etsyConnection.update({ where: { id: conn.id }, data: { lastSyncAt: new Date() } });
     return NextResponse.json({ success: true, data: { synced } });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Sync failed";

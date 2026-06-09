@@ -1,10 +1,8 @@
+// OAuth callback removed — this app uses Personal Access Token authentication.
+// This file is kept as a placeholder to avoid 404s on old cached redirect URIs.
 import { NextRequest, NextResponse } from "next/server";
 
-// Callback is now handled at /api/etsy?action=callback
-// This redirect handles any stale bookmarks or cached old redirect URIs
 export async function GET(req: NextRequest) {
-  const { searchParams, protocol, host } = new URL(req.url);
-  const params = new URLSearchParams({ action: "callback" });
-  searchParams.forEach((v, k) => params.set(k, v));
-  return NextResponse.redirect(`${protocol}//${host}/api/etsy?${params.toString()}`);
+  const base = new URL(req.url).origin;
+  return NextResponse.redirect(`${base}/publishing?etsy_error=${encodeURIComponent("OAuth not used — configure ETSY_API_KEY and ETSY_SHOP_ID in Vercel env vars")}`);
 }
