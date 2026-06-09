@@ -127,12 +127,18 @@ function EtsyTab({ status, connectError }: { status: EtsyStatus | null; connectE
     return (
       <div style={{ padding: "3rem 2rem", textAlign: "center" }}>
         <ShoppingBag size={40} style={{ color: "var(--border-medium)", marginBottom: "1rem" }} />
-        <div style={{ fontSize: "var(--text-lg)", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.5rem" }}>Etsy Not Configured</div>
-        <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginBottom: "1rem", maxWidth: 420, margin: "0 auto 1rem" }}>
-          Set <code>ETSY_API_KEY</code> and <code>ETSY_SHOP_ID</code> in your Vercel environment variables to enable Etsy publishing.
+        <div style={{ fontSize: "var(--text-lg)", fontWeight: 600, color: "var(--text-primary)", marginBottom: "0.5rem" }}>Connect Your Etsy Shop</div>
+        <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginBottom: "1.5rem", maxWidth: 420, margin: "0 auto 1.5rem" }}>
+          Authorize Alpha &amp; Omega to publish listings to your Etsy shop via OAuth.
         </div>
+        <button
+          onClick={() => { window.location.href = "/api/etsy?action=connect"; }}
+          style={{ padding: "0.625rem 1.5rem", background: "var(--accent)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", fontSize: "var(--text-sm)", fontWeight: 600, cursor: "pointer" }}
+        >
+          Connect Etsy Shop
+        </button>
         {connectError && (
-          <div style={{ padding: "0.625rem 1rem", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "var(--radius-md)", fontSize: "var(--text-sm)", color: "#dc2626", maxWidth: 420, margin: "0 auto" }}>
+          <div style={{ padding: "0.625rem 1rem", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "var(--radius-md)", fontSize: "var(--text-sm)", color: "#dc2626", maxWidth: 420, margin: "1rem auto 0" }}>
             {connectError}
           </div>
         )}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
-import { getEtsyShopId, getShopListings } from "@/lib/integrations/etsy";
+import { getShopListings, withEtsyToken } from "@/lib/integrations/etsy";
 
 // Schedule: 0 6 * * * (6am UTC daily)
 export async function GET(req: NextRequest) {
@@ -10,9 +10,11 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    let shopId: string;
-    try { shopId = getEtsyShopId(); } catch {
-      return NextResponse.json({ success: true, data: { skipped: "ETSY_SHOP_ID not configured" } });
+    let remoteListings: Awaited<ReturnType<typeof getShopListings>>;
+    try {
+      remoteListings = await withEtsyToken((token, shopId) => getShopListings(token, shopId, 100, 0));
+    } catch {
+      return NextResponse.json({ success: true, data: { skipped: "No Etsy shop connected" } });
     }
 
     const listings = await prisma.etsyListing.findMany({
@@ -23,7 +25,6 @@ export async function GET(req: NextRequest) {
 
     if (listings.length === 0) return NextResponse.json({ success: true, data: { synced: 0 } });
 
-    const remoteListings = await getShopListings(shopId, 100, 0);
     const remoteMap = new Map(remoteListings.map((l) => [String(l.listing_id), l]));
     let synced = 0;
 
