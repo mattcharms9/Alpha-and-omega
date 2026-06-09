@@ -8,6 +8,7 @@ const PUBLIC_API_PATHS = [
   "/api/gumroad/webhook",
   "/api/etsy?action=connect",
   "/api/etsy?action=callback",
+  "/api/etsy?action=status",
   "/api/etsy/callback",
   "/api/etsy/webhook",
   "/api/billing?action=webhook",
