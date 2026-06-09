@@ -8,9 +8,11 @@ export const ETSY_BASE = "https://openapi.etsy.com/v3";
 
 export function buildEtsyHeaders(): Record<string, string> {
   const keystring = process.env.ETSY_API_KEY;
+  const sharedSecret = process.env.ETSY_SHARED_SECRET;
   if (!keystring) throw new Error("ETSY_API_KEY not set");
+  if (!sharedSecret) throw new Error("ETSY_SHARED_SECRET not set");
   return {
-    "x-api-key": keystring,
+    "x-api-key": `${keystring}:${sharedSecret}`,
     "Content-Type": "application/json",
   };
 }
@@ -112,13 +114,15 @@ export async function uploadListingFile(
   formData.append("file", new Blob([new Uint8Array(fileBuffer)], { type: "application/pdf" }), filename);
 
   const apiKey = process.env.ETSY_API_KEY;
+  const sharedSecret = process.env.ETSY_SHARED_SECRET;
   if (!apiKey) throw new Error("ETSY_API_KEY not set");
+  if (!sharedSecret) throw new Error("ETSY_SHARED_SECRET not set");
 
   const res = await fetch(
     `${ETSY_BASE}/application/shops/${shopId}/listings/${listingId}/files`,
     {
       method: "POST",
-      headers: { "x-api-key": apiKey },
+      headers: { "x-api-key": `${apiKey}:${sharedSecret}` },
       body: formData,
     }
   );
@@ -141,13 +145,15 @@ export async function uploadListingImage(
   formData.append("image", new Blob([new Uint8Array(imageBuffer)], { type: mimeType }), filename);
 
   const apiKey = process.env.ETSY_API_KEY;
+  const sharedSecret = process.env.ETSY_SHARED_SECRET;
   if (!apiKey) throw new Error("ETSY_API_KEY not set");
+  if (!sharedSecret) throw new Error("ETSY_SHARED_SECRET not set");
 
   const res = await fetch(
     `${ETSY_BASE}/application/shops/${shopId}/listings/${listingId}/images`,
     {
       method: "POST",
-      headers: { "x-api-key": apiKey },
+      headers: { "x-api-key": `${apiKey}:${sharedSecret}` },
       body: formData,
     }
   );
