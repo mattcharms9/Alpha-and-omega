@@ -253,7 +253,6 @@ function PublishingPageInner() {
   const [activeTab, setActiveTab] = useState<TabId>(initialTab);
   const [etsyStatus, setEtsyStatus] = useState<EtsyStatus | null>(null);
   const [revenue, setRevenue] = useState<RevenueData | null>(null);
-  const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -289,20 +288,8 @@ function PublishingPageInner() {
 
   useEffect(() => { void loadStatus(); }, [loadStatus]);
 
-  async function handleEtsyConnect() {
-    setConnecting(true);
-    setConnectError(null);
-    try {
-      const res = await apiFetch("/api/etsy?action=connect");
-      const json = await res.json() as { success: boolean; data?: { authUrl: string }; error?: string };
-      if (json.success && json.data?.authUrl) {
-        window.location.href = json.data.authUrl;
-      } else {
-        setConnectError(json.error ?? "Could not start Etsy connection. Check that ETSY_API_KEY is set in your .env file.");
-      }
-    } catch {
-      setConnectError("Network error — is the dev server running?");
-    } finally { setConnecting(false); }
+  function handleEtsyConnect() {
+    window.location.href = "/api/etsy?action=connect";
   }
 
   return (
@@ -371,7 +358,7 @@ function PublishingPageInner() {
       {/* Tab content */}
       <AnimatePresence mode="wait">
         <motion.div key={activeTab} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-          {activeTab === "etsy" && <EtsyTab status={etsyStatus} onConnect={connecting ? () => {} : handleEtsyConnect} connectError={connectError} />}
+          {activeTab === "etsy" && <EtsyTab status={etsyStatus} onConnect={handleEtsyConnect} connectError={connectError} />}
           {activeTab === "gumroad" && (
             <div style={{ padding: "1.5rem 2rem" }}>
               <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text-primary)", marginBottom: "1rem", display: "flex", alignItems: "center", gap: "0.5rem" }}>

@@ -144,34 +144,36 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // ── connect — browser navigation (no x-api-key needed, exempt in proxy) ──
+  if (action === "connect") {
+    let apiKey: string;
+    try { apiKey = getEtsyApiKey(); } catch {
+      return err(base, "ETSY_API_KEY env var not configured on this server");
+    }
+    const redirectUri = process.env.ETSY_REDIRECT_URI;
+    if (!redirectUri) {
+      return err(base, "ETSY_REDIRECT_URI env var not configured on this server");
+    }
+
+    const verifier = generateCodeVerifier();
+    const challenge = await generateCodeChallenge(verifier);
+    const state = buildOAuthState(verifier);
+
+    const params = new URLSearchParams({
+      response_type: "code",
+      client_id: apiKey,
+      redirect_uri: redirectUri,
+      scope: ETSY_SCOPES,
+      state,
+      code_challenge: challenge,
+      code_challenge_method: "S256",
+    });
+
+    return NextResponse.redirect(`${ETSY_AUTH_BASE}?${params.toString()}`);
+  }
+
   // ── Protected GET actions (require x-api-key header via proxy) ───────────
   try {
-    if (action === "connect") {
-      let apiKey: string;
-      try { apiKey = getEtsyApiKey(); } catch {
-        return NextResponse.json({ success: false, error: "ETSY_API_KEY env var not configured" }, { status: 500 });
-      }
-      const redirectUri = process.env.ETSY_REDIRECT_URI;
-      if (!redirectUri) {
-        return NextResponse.json({ success: false, error: "ETSY_REDIRECT_URI env var not configured" }, { status: 500 });
-      }
-
-      const verifier = generateCodeVerifier();
-      const challenge = await generateCodeChallenge(verifier);
-      const state = buildOAuthState(verifier);
-
-      const params = new URLSearchParams({
-        response_type: "code",
-        client_id: apiKey,
-        redirect_uri: redirectUri,
-        scope: ETSY_SCOPES,
-        state,
-        code_challenge: challenge,
-        code_challenge_method: "S256",
-      });
-
-      return NextResponse.json({ success: true, data: { authUrl: `${ETSY_AUTH_BASE}?${params.toString()}` } });
-    }
 
     if (action === "status") {
       const conn = await prisma.etsyConnection.findFirst({ where: { isActive: true } });
