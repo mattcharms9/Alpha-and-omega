@@ -37,9 +37,8 @@ export async function generateCodeChallenge(verifier: string): Promise<string> {
 // ── API key — single source of truth ─────────────────────────────────────────
 
 /**
- * Returns the Etsy App Key (Keystring) for use in x-api-key headers.
- * Reads ETSY_API_KEY. Throws loudly if missing so misconfiguration is
- * immediately obvious in logs — no silent undefined.
+ * Returns the Etsy App Key (Keystring) used as client_id in the OAuth
+ * authorization URL and token exchange. NOT used in x-api-key headers.
  */
 export function getEtsyApiKey(): string {
   const key = process.env.ETSY_API_KEY;
@@ -47,13 +46,24 @@ export function getEtsyApiKey(): string {
   return key;
 }
 
+/**
+ * Returns the Etsy Shared Secret used in the x-api-key header on every
+ * API request. This is the "Shared Secret" value from the Etsy developer
+ * portal — distinct from the Keystring/App Key used as client_id.
+ */
+export function getEtsySharedSecret(): string {
+  const secret = process.env.ETSY_SHARED_SECRET;
+  if (!secret) throw new Error("ETSY_SHARED_SECRET env var is not set — add it in Vercel dashboard");
+  return secret;
+}
+
 // ── Shared header builder — never construct inline ────────────────────────────
 
 export function buildEtsyHeaders(accessToken: string): Record<string, string> {
-  const apiKey = getEtsyApiKey();
+  const sharedSecret = getEtsySharedSecret();
   return {
     Authorization: `Bearer ${accessToken}`,
-    "x-api-key": apiKey,
+    "x-api-key": sharedSecret,
     "Content-Type": "application/json",
   };
 }
@@ -177,12 +187,12 @@ export async function uploadListingFile(
   const formData = new FormData();
   formData.append("file", new Blob([new Uint8Array(fileBuffer)], { type: "application/pdf" }), filename);
 
-  const apiKey = getEtsyApiKey();
+  const sharedSecret = getEtsySharedSecret();
   const res = await fetch(
     `${ETSY_BASE}/application/shops/${shopId}/listings/${listingId}/files`,
     {
       method: "POST",
-      headers: { "x-api-key": apiKey, Authorization: `Bearer ${accessToken}` },
+      headers: { "x-api-key": sharedSecret, Authorization: `Bearer ${accessToken}` },
       body: formData,
     }
   );
@@ -205,12 +215,12 @@ export async function uploadListingImage(
   const formData = new FormData();
   formData.append("image", new Blob([new Uint8Array(imageBuffer)], { type: mimeType }), filename);
 
-  const apiKey = getEtsyApiKey();
+  const sharedSecret = getEtsySharedSecret();
   const res = await fetch(
     `${ETSY_BASE}/application/shops/${shopId}/listings/${listingId}/images`,
     {
       method: "POST",
-      headers: { "x-api-key": apiKey, Authorization: `Bearer ${accessToken}` },
+      headers: { "x-api-key": sharedSecret, Authorization: `Bearer ${accessToken}` },
       body: formData,
     }
   );
