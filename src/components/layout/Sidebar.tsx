@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { loadScanFromCache } from "@/lib/cache/intelligence-cache";
 import { PipelineProgress } from "@/components/layout/PipelineProgress";
+import { apiFetch } from "@/lib/api";
 
 // ── Build Product sub-items ────────────────────────────────────────────────────
 const BUILD_ITEMS = [
@@ -55,8 +56,8 @@ export function Sidebar() {
     let stale = false;
     async function fetchPending() {
       try {
-        const res = await fetch("/api/launch-queue?action=today");
-        if (stale) return;
+        const res = await apiFetch("/api/launch-queue?action=today");
+        if (stale || !res.ok) return;
         const json = await res.json() as { success: boolean; data: { cards: Array<{ status: string }> } | null };
         if (json.success && json.data) {
           setPendingCards(json.data.cards.filter((c) => c.status === "pending").length);
