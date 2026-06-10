@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { rateLimit } from "@/lib/rate-limit";
+
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
 import { toSafeErrorMessage } from "@/lib/errors";
 import { runFullScan, runNicheScan, getLatestSnapshot, getAllNicheReports } from "@/lib/market-intelligence/run-scan";
 import { prisma } from "@/lib/db/prisma";

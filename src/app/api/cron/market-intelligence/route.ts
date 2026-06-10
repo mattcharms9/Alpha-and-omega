@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { runFullScan } from "@/lib/market-intelligence/run-scan";
 
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
+
 // Schedule: 0 1 * * * (1am UTC — runs 1 hour before agent pipeline at 2am)
 export async function GET(req: NextRequest) {
   const auth = req.headers.get("authorization");

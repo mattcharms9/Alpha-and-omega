@@ -16,11 +16,17 @@ async function delay(ms: number) {
 
 export async function runNicheScan(niche: string, reportDate: string) {
   const [topSellers, risingListings, priceDistribution, totalListings] = await Promise.all([
-    searchTopListings(niche, 20).catch(() => []),
-    searchRisingListings(niche, 12).catch(() => []),
-    getPriceDistribution(niche).catch(() => []),
-    getListingCount(niche).catch(() => 0),
+    searchTopListings(niche, 20).catch((err) => { console.error(`[run-scan] Etsy topSellers failed for "${niche}":`, err instanceof Error ? err.message : err); return [] as Awaited<ReturnType<typeof searchTopListings>>; }),
+    searchRisingListings(niche, 12).catch((err) => { console.error(`[run-scan] Etsy risingListings failed for "${niche}":`, err instanceof Error ? err.message : err); return [] as Awaited<ReturnType<typeof searchRisingListings>>; }),
+    getPriceDistribution(niche).catch((err) => { console.error(`[run-scan] Etsy priceDistribution failed for "${niche}":`, err instanceof Error ? err.message : err); return [] as Awaited<ReturnType<typeof getPriceDistribution>>; }),
+    getListingCount(niche).catch((err) => { console.error(`[run-scan] Etsy listingCount failed for "${niche}":`, err instanceof Error ? err.message : err); return 0; }),
   ]);
+
+  // Quality gate: if all Etsy calls returned empty, skip saving — don't poison the DB with AI-only data
+  if (topSellers.length === 0 && totalListings === 0) {
+    console.warn(`[run-scan] Skipping "${niche}" — all Etsy calls returned empty. API may be rate-limited or unavailable.`);
+    return { report: null, totalListings: 0 };
+  }
 
   const analysis = await analyzeNicheMarket(niche, topSellers, risingListings, priceDistribution, totalListings);
 
@@ -46,12 +52,16 @@ export async function runFullScan(): Promise<{
     try {
       const { report, totalListings } = await runNicheScan(niche, reportDate);
       totalListingsPulled += totalListings;
-      results.push({
-        niche,
-        opportunityScore: report.opportunityScore,
-        competitionLevel: report.competitionLevel,
-      });
-      console.log(`[market-intelligence] ✓ ${niche} — score: ${report.opportunityScore}, competition: ${report.competitionLevel}`);
+      if (report) {
+        results.push({
+          niche,
+          opportunityScore: report.opportunityScore,
+          competitionLevel: report.competitionLevel,
+        });
+        console.log(`[market-intelligence] ✓ ${niche} — score: ${report.opportunityScore}, competition: ${report.competitionLevel}, listings: ${totalListings}`);
+      } else {
+        console.warn(`[market-intelligence] ⚠ ${niche} — skipped (no Etsy data)`);
+      }
     } catch (err) {
       console.error(`[market-intelligence] ✗ ${niche}:`, err instanceof Error ? err.message : err);
     }

@@ -233,6 +233,39 @@ with Next.js App Router's server-side rendering. Common issues:
 
 ---
 
+## RI-018: Etsy API Silent Failure Poisons the DB with Garbage Data
+
+**First seen:** Session 030 (2026-06-10) — 12 reports saved with totalListings: 0, AI-fabricated scores
+**Occurrences:** 1
+
+**Pattern:** All Etsy API calls in `run-scan.ts` used `.catch(() => [])` — swallowed every error with no logging. When the Etsy API returned non-OK responses (rate limit, transient error, etc.), all 4 calls returned empty arrays. `analyzeNicheMarket` still ran with empty inputs and the AI fabricated scores from training knowledge. Reports were saved with `totalListings: 0` and no real market data. The agent pipeline then used these as "live data," causing every card to show "0 listings."
+
+**Fix:** Three-part defense:
+1. Named catch handlers: `.catch((err) => { console.error(...) })` — Vercel logs show the actual error
+2. Quality gate in `runNicheScan`: if all Etsy calls return empty, skip saving — return `{ report: null, totalListings: 0 }`
+3. `market-scout-agent.ts` filters: `usableReports = liveReports.filter(r => r.totalListings > 0)` — falls through to AI fallback if no valid reports
+
+**Prevention:** Any function that calls an external API and saves results must: (a) log errors explicitly, (b) validate data quality before persisting, (c) downstream consumers must filter out zero/empty data.
+
+---
+
+## RI-019: Every Route Doing Async Work Needs `export const maxDuration`
+
+**First seen:** Multiple sessions (028, 030)
+**Occurrences:** 2+ — cron/run-agent-queue (028), cron/market-intelligence (030), market-intelligence POST (030)
+
+**Pattern:** A Vercel serverless route does long-running async work (AI calls, 25-niche Etsy scan, agent pipeline) but has no `export const maxDuration`. Vercel Hobby default is 10 seconds. The function times out silently — partial work may have been done but the response indicates failure. Even with `vercel.json` functions config, the code-level export is the authoritative override in Next.js App Router.
+
+**Fix:** Every route handler that makes AI calls, runs a pipeline, or does any scan must have:
+```typescript
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
+```
+
+**Prevention:** Checklist item added below. Grep for `runFullScan`, `runManagerAgent`, `generateJSON`, `runBuildPipeline` — every route containing these must have the exports.
+
+---
+
 ## Prevention Checklist
 
 Before submitting code for review, verify:
@@ -248,3 +281,6 @@ Before submitting code for review, verify:
 - [ ] All client-side `/api/*` fetches use `apiFetch()`, never plain `fetch()`
 - [ ] Prisma queries that need relations use `include:` — never assume the field is present
 - [ ] Render gates use `data.length > 0`, never `status === "specificString"`
+- [ ] Any route calling AI, running a pipeline, or doing multi-step scans has `export const maxDuration = 300` + `export const dynamic = "force-dynamic"`
+- [ ] External API callers log errors explicitly — never `.catch(() => [])` alone; always `.catch((err) => { console.error(...); return []; })`
+- [ ] Functions that persist external API data validate quality before saving (don't persist empty/zero results)

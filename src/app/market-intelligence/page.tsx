@@ -14,8 +14,8 @@ function CompetitionBadge({ level }: { level: string }) {
   const colors: Record<string, string> = {
     low: "var(--emerald)",
     medium: "var(--gold)",
-    high: "#f97316",
-    saturated: "#ef4444",
+    high: "var(--amber)",
+    saturated: "var(--rose)",
   };
   const c = colors[level] ?? "var(--text-muted)";
   return (
@@ -26,7 +26,7 @@ function CompetitionBadge({ level }: { level: string }) {
 }
 
 function ScoreBar({ score }: { score: number }) {
-  const color = score >= 70 ? "var(--emerald)" : score >= 45 ? "var(--gold)" : "#f97316";
+  const color = score >= 70 ? "var(--emerald)" : score >= 45 ? "var(--gold)" : "var(--amber)";
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <div style={{ flex: 1, height: 6, background: "var(--border-subtle)", borderRadius: 3, overflow: "hidden" }}>
@@ -173,10 +173,10 @@ function NicheCard({ report }: NicheCardProps) {
                 {/* Avoid */}
                 {avoid.length > 0 && (
                   <div style={{ gridColumn: "1 / -1" }}>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#ef4444", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.8 }}>Avoid</div>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "var(--rose)", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.8 }}>Avoid</div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                       {avoid.map((a, i) => (
-                        <span key={i} style={{ fontSize: 11, padding: "3px 8px", background: "#ef444410", border: "1px solid #ef444430", borderRadius: 6, color: "#ef4444" }}>{a}</span>
+                        <span key={i} style={{ fontSize: 11, padding: "3px 8px", background: "var(--rose-bg)", border: "1px solid var(--rose-border)", borderRadius: 6, color: "var(--rose)" }}>{a}</span>
                       ))}
                     </div>
                   </div>
@@ -356,10 +356,10 @@ export default function MarketIntelligencePage() {
 
       {/* Error */}
       {error && !loading && (
-        <div style={{ padding: "20px", background: "#ef444415", border: "1px solid #ef444430", borderRadius: 12, display: "flex", alignItems: "center", gap: 12 }}>
-          <AlertCircle size={18} style={{ color: "#ef4444" }} />
+        <div style={{ padding: "20px", background: "var(--rose-bg)", border: "1px solid var(--rose-border)", borderRadius: 12, display: "flex", alignItems: "center", gap: 12 }}>
+          <AlertCircle size={18} style={{ color: "var(--rose)" }} />
           <div>
-            <div style={{ fontWeight: 600, color: "#ef4444", marginBottom: 4 }}>{error}</div>
+            <div style={{ fontWeight: 600, color: "var(--rose)", marginBottom: 4 }}>{error}</div>
             <div style={{ fontSize: 13, color: "var(--text-muted)" }}>Run a full scan to populate market data, or wait for the 1am UTC nightly cron.</div>
           </div>
         </div>

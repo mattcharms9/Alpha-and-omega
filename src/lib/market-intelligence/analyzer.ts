@@ -155,8 +155,10 @@ export async function getLatestReportForNiche(niche: string, maxAgeDays = 1) {
   });
 }
 
-export async function getTopOpportunitiesByScore(limit = 5) {
+export async function getTopOpportunitiesByScore(limit = 5, reportDate?: string) {
+  const date = reportDate ?? new Date().toISOString().slice(0, 10);
   return prisma.marketIntelligenceReport.findMany({
+    where: { reportDate: date, totalListings: { gt: 0 } },
     orderBy: { opportunityScore: "desc" },
     take: limit,
     select: {

@@ -10,6 +10,10 @@ async function main() {
     const { report, totalListings } = await runNicheScan("grief journal", new Date().toISOString().slice(0, 10));
     console.log("=== RESULT ===");
     console.log("totalListings (from scan):", totalListings);
+    if (!report) {
+      console.warn("⚠ Report skipped — Etsy returned no data for this niche (API may be unavailable)");
+      return;
+    }
     console.log("totalListings (from report):", report.totalListings);
     console.log("competitionLevel:", report.competitionLevel);
     console.log("opportunityScore:", report.opportunityScore);

@@ -1,5 +1,5 @@
 # Alpha & Omega — Operational Status
-**Last Updated:** 2026-06-10 (Session 029 — Fix Launch Queue Render: apiFetch auth)
+**Last Updated:** 2026-06-10 (Session 030 — Fix Market Intelligence Pipeline: real Etsy data)
 
 ---
 
@@ -182,9 +182,9 @@
 | Cost Controls | ✅ Live | `AGENT_DAILY_COST_LIMIT_USD` env var; pipeline stops + alerts if cap reached; est. $1.10–$1.20/day fully autonomous |
 | Pinterest OAuth Connect UI | ✅ Live | `PinterestPanel` handles connect/disconnect/board-select; `?pinterest=connected` param triggers tab switch + success banner |
 | Etsy OAuth Connect Error Handling | ✅ Live | Connect button shows error message instead of silently failing; `?etsy_error=` param shows banner |
-| Market Intelligence Engine | ✅ Live (fixed) | 25 niches scanned nightly at 1am UTC; TopSellers/RisingListings/PriceDistribution/VisualStyle per niche; auth fixed Session 027B |
-| Market Intelligence Dashboard | ✅ Live | `/market-intelligence` — snapshot, filterable niche grid, expanded reports with top sellers + opportunities |
-| Zero-Guess Agent Pipeline | ✅ Live | Scout reads live DB reports; Manager injects market intel; LaunchCards show 📊/🤖 data source badge |
+| Market Intelligence Engine | ✅ Live (fixed) | 25 niches scanned nightly at 1am UTC; quality gate skips niches when Etsy API returns empty; verbose error logging; maxDuration fixed Session 030 |
+| Market Intelligence Dashboard | ✅ Live | `/market-intelligence` — snapshot, filterable niche grid, expanded reports with top sellers + opportunities; CSS vars fixed Session 030 |
+| Zero-Guess Agent Pipeline | ✅ Live | Scout filters usable reports (totalListings > 0); Manager uses date-filtered getTopOpportunitiesByScore; LaunchCards show 📊/🤖 badge |
 | Visual Benchmarking | ✅ Live | Claude Vision analyzes top-seller covers; `generateCoverImagePlan()` art-directed to match proven style |
 | Proven Tag Injection | ✅ Live | `generateOptimizedListing()` uses top-seller tags as mandatory starting set (up to 8 of 13) |
 | Build Pipeline Completeness | ✅ Live | `buildCompleteness` (0–100%), `stagesCompleted`, `stagesFailed` on LaunchCard; UI shows warning at <100% |

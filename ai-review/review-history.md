@@ -4,6 +4,35 @@ Chronological log of all review sessions with findings and resolutions.
 
 ---
 
+## Session 030 — Fix Market Intelligence Pipeline: Real Etsy Data
+**Date:** 2026-06-10
+**Focus:** All 12 launch cards showing 0 listings and 7/12 "AI Estimate" badges — market intelligence pipeline not feeding real Etsy data to agent scorer
+**Files Changed:** 7 files (2 route files, run-scan.ts, analyzer.ts, manager-agent.ts, market-scout-agent.ts, market-intelligence/page.tsx, scripts/test-niche-scan.ts)
+**Build Status:** ✅ Passing — 0 TypeScript errors, 0 build errors
+**Commit:** (see git log)
+
+### Root Causes and Fixes
+
+**1. Silent Etsy failure poisoning the DB (CRITICAL):** At 04:22 UTC, a manual scan ran and all Etsy API calls returned non-OK responses (rate limit or transient error). The `.catch(() => [])` handlers in `run-scan.ts` swallowed every error with no logging. With no real data, `analyzeNicheMarket` ran on empty inputs and the AI fabricated scores (28–62/100). All 12 reports saved with `totalListings: 0`, `topSellers: []`, `risingListings: []`.
+*Fix:* Replaced silent `.catch(() => [])` with named catch handlers that log `console.error` with the specific Etsy error. Added a **quality gate**: if all 4 Etsy calls return empty (`topSellers.length === 0 && totalListings === 0`), the niche is skipped — report NOT saved. This prevents garbage data from entering the pipeline.
+
+**2. Missing `maxDuration` on cron route (CRITICAL):** `src/app/api/cron/market-intelligence/route.ts` had no `export const maxDuration`. On Vercel Hobby, the default serverless timeout is 10 seconds — the market intelligence cron would ALWAYS time out, silently completing 0 niches.
+*Fix:* Added `export const maxDuration = 300` and `export const dynamic = "force-dynamic"` to both the cron route and the POST market-intelligence route.
+
+**3. `getTopOpportunitiesByScore()` had no date filter:** Returns highest-scoring rows from any date — could serve stale data from a previous scan to the manager agent. Also didn't filter out empty-data reports.
+*Fix:* Added `reportDate?: string` parameter (defaults to today). Added `where: { totalListings: { gt: 0 } }` filter to exclude zero-listing reports.
+
+**4. `market-scout-agent.ts` didn't filter empty-data reports:** Used DB reports as "live data" even when `totalListings === 0` — every card showed "0 listings."
+*Fix:* Added `usableReports` filter: `liveReports.filter(r => r.totalListings > 0)`. Threshold check now uses `usableReports.length >= 5` instead of `liveReports.length >= 5`. If no valid reports exist, falls through to AI fallback (correct behavior).
+
+**5. Hardcoded hex colors in market-intelligence page:** Violated project constraint (CSS variables only). `#f97316` (orange), `#ef4444` (red) used in CompetitionBadge, ScoreBar, Avoid section, and error state.
+*Fix:* All replaced with `var(--amber)`, `var(--rose)`, `var(--rose-bg)`, `var(--rose-border)`.
+
+### Post-deploy action required
+Run a fresh full scan from the Market Intelligence page ("Run Full Scan" button) to populate DB with real Etsy data. The 12 existing reports for today have `totalListings: 0` and will be skipped by the agent pipeline (quality gate) — a fresh scan will overwrite them with real data via upsert.
+
+---
+
 ## Session 029 — Fix Launch Queue Render: apiFetch Auth
 **Date:** 2026-06-10
 **Focus:** Launch queue page showed "No queue for today" despite 12 cards in DB — single root cause diagnosed and fixed

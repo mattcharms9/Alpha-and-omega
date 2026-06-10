@@ -120,7 +120,7 @@ export async function runManagerAgent(date: string): Promise<ManagerResult> {
   // Stage 6: Manager Editorial Review (with learning + market intelligence context)
   const [learningContext, topMarketOpps] = await Promise.all([
     getLearningContext().catch(() => "No learning data available."),
-    getTopOpportunitiesByScore(5).catch(() => []),
+    getTopOpportunitiesByScore(5, date).catch(() => []),
   ]);
 
   const marketIntelContext = topMarketOpps.length > 0

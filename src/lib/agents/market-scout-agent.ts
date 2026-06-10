@@ -38,9 +38,11 @@ export async function runMarketScoutAgent(
     },
   }).catch(() => []);
 
-  // 2. If we have live data, use it as primary source
-  if (liveReports.length >= 5) {
-    const opportunities: MarketOpportunity[] = liveReports
+  // 2. If we have live data with real Etsy listings, use it as primary source
+  // Filter out empty-data reports (Etsy API failure at scan time) to avoid poisoning the pipeline
+  const usableReports = liveReports.filter((r) => r.totalListings > 0);
+  if (usableReports.length >= 5) {
+    const opportunities: MarketOpportunity[] = usableReports
       .filter((r) => r.competitionLevel !== "saturated")
       .map((r) => {
         const priceRange = r.winningPriceRange as { min: number; max: number; sweet: number } | null;
@@ -61,7 +63,7 @@ export async function runMarketScoutAgent(
       .slice(0, 25);
 
     const durationMs = Date.now() - start;
-    await log("market-scout", { source: "live_db", reportCount: liveReports.length }, opportunities, {
+    await log("market-scout", { source: "live_db", reportCount: usableReports.length }, opportunities, {
       tokens: 0, cost: 0, durationMs,
     });
 
