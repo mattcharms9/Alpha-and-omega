@@ -6,6 +6,7 @@ import { toSafeErrorMessage } from "@/lib/errors";
 import { runBuildPipeline } from "@/lib/agents/build-pipeline";
 import { runManagerAgent } from "@/lib/agents/manager-agent";
 import { verifyEmailActionToken } from "@/lib/auth/email-action-tokens";
+import { auth } from "@/lib/auth";
 
 export const maxDuration = 300;
 export const dynamic = "force-dynamic";
@@ -160,6 +161,10 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "trigger-run") {
+      const session = await auth();
+      if (!session) {
+        return NextResponse.json({ success: false, error: "Sign in required" }, { status: 401 });
+      }
       const today = new Date().toISOString().slice(0, 10);
 
       // Return existing queue if already ready — avoid duplicate runs

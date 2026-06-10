@@ -194,6 +194,45 @@ with Next.js App Router's server-side rendering. Common issues:
 
 ---
 
+---
+
+## RI-015: Client Page Fetches Must Use apiFetch, Not plain fetch()
+
+**First seen:** Session 029 (2026-06-10)
+**Occurrences:** 1 — entire launch-queue page body was empty despite 12 cards in DB
+
+**Pattern:** A "use client" page uses `fetch("/api/...")` directly. The proxy (`src/proxy.ts`) requires `x-api-key` on every non-public API route. Plain `fetch()` sends no headers → 401 → `json.success = false` → state never set → empty UI rendered. Meanwhile the Sidebar used `apiFetch()` and worked fine, making it appear the data existed but the page couldn't see it.
+
+**Why it happens:** Copying fetch calls from documentation examples or non-auth codebases that don't have API key middleware.
+
+**Fix:** Every fetch to `/api/*` from a client component must use `apiFetch(url, { credentials: "include" })` from `@/lib/api.ts`. This injects `x-api-key: NEXT_PUBLIC_API_KEY` automatically.
+
+**Prevention:** Never use plain `fetch()` in client components for internal API calls. Grep for `fetch("/api/` and `fetch(\`/api/` before shipping any client component.
+
+---
+
+## RI-016: Always Verify Prisma Queries Use include for Relations
+
+**First seen:** Session 029 diagnosis (2026-06-10) — confirmed already correct in this case
+
+**Pattern:** A route fetches `prisma.dailyQueue.findUnique({ where: ... })` without `include: { cards: true }`. The relation is never loaded. The response returns `{ cards: undefined }` or the field is missing entirely. The client-side type assertion masks this — the page reads `queue.cards.length` and crashes or shows empty.
+
+**Prevention:** Any time a model has a relation that the consumer needs, verify the Prisma query has `include: { relationName: true }` (or `select` with the relation). Treat missing include as a bug equal to a missing WHERE clause.
+
+---
+
+## RI-017: Never Gate Page Rendering on a Specific queue.status String
+
+**First seen:** Session 028/029 analysis
+
+**Pattern:** A component renders cards only when `queue.status === "ready"`. If the queue has status `"partial"` or `"complete"` (or any future value), the condition is false and the page shows the empty state even though `queue.cards.length > 0`.
+
+**Fix:** Gate on data presence: `cards.length > 0`. The status string is metadata, not a render gate.
+
+**Prevention:** Search for `queue.status ===` or `data.status ===` in render conditions. Replace with `cards.length > 0` or equivalent data-presence check.
+
+---
+
 ## Prevention Checklist
 
 Before submitting code for review, verify:
@@ -206,3 +245,6 @@ Before submitting code for review, verify:
 - [ ] Client components do NOT import from `src/lib/ai/*.ts` (except `mix-types.ts`)
 - [ ] After schema changes: run `npx prisma generate` (not just `db push`)
 - [ ] `npm run build` passes before considering work complete
+- [ ] All client-side `/api/*` fetches use `apiFetch()`, never plain `fetch()`
+- [ ] Prisma queries that need relations use `include:` — never assume the field is present
+- [ ] Render gates use `data.length > 0`, never `status === "specificString"`

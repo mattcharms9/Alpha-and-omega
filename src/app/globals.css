@@ -115,6 +115,9 @@
   --border-subtle:   #E8E7E4;   /* → --border-light */
   --border-default:  #D4D3CF;   /* → --border-medium */
 
+  /* Primary brand color */
+  --color-primary:   var(--emerald);
+
   /* Gold → Amber (closest light-mode equivalent) */
   --gold:            #D97706;
   --gold-bright:     #F59E0B;

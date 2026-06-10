@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle, XCircle, ChevronDown, ChevronUp, RefreshCw, AlertTriangle, Clock, Zap } from "lucide-react";
+import { apiFetch } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -79,7 +80,7 @@ function stageIndex(buildStatus: string): number {
 function ConfidenceBadge({ level }: { level: string }) {
   const cfg: Record<string, { color: string; label: string }> = {
     high: { color: "var(--emerald)", label: "HIGH CONFIDENCE" },
-    medium: { color: "var(--amber, #f59e0b)", label: "MEDIUM CONFIDENCE" },
+    medium: { color: "var(--amber)", label: "MEDIUM CONFIDENCE" },
     low: { color: "var(--text-muted)", label: "LOW CONFIDENCE" },
   };
   const c = cfg[level] ?? cfg.medium!;
@@ -91,13 +92,20 @@ function ConfidenceBadge({ level }: { level: string }) {
 }
 
 function CompetitionDot({ level }: { level: string }) {
-  const colors: Record<string, string> = { low: "var(--emerald)", medium: "#f59e0b", high: "#ef4444", saturated: "#6b7280" };
-  return <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: colors[level] ?? "#6b7280", marginRight: 4, verticalAlign: "middle" }} />;
+  const colors: Record<string, string> = {
+    low: "var(--emerald)",
+    medium: "var(--amber)",
+    high: "var(--rose)",
+    saturated: "var(--text-muted)",
+  };
+  return (
+    <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: colors[level] ?? "var(--text-muted)", marginRight: 4, verticalAlign: "middle" }} />
+  );
 }
 
 function DataSourceBadge({ dataSource, marketEvidence }: { dataSource: string; marketEvidence: string | null }) {
   const isLive = dataSource === "live_etsy_data";
-  const color = isLive ? "var(--emerald)" : "#f59e0b";
+  const color = isLive ? "var(--emerald)" : "var(--amber)";
   return (
     <span title={marketEvidence ?? undefined} style={{ fontSize: "0.6rem", fontWeight: 700, color, letterSpacing: "0.06em", textTransform: "uppercase", border: `1px solid ${color}40`, borderRadius: 4, padding: "1px 5px", background: `${color}12` }}>
       {isLive ? "📊 Live Data" : "🤖 AI Estimate"}
@@ -111,11 +119,11 @@ function CompletenessIndicator({ card }: { card: LaunchCard }) {
   if (card.buildStatus !== "published" && card.buildStatus !== "built") return null;
   const pct = card.buildCompleteness;
   if (pct >= 100) return null;
-  const color = pct >= 75 ? "#f59e0b" : "#ef4444";
+  const color = pct >= 75 ? "var(--amber)" : "var(--rose)";
   const label = pct >= 75 ? "Published with warnings" : "Incomplete listing";
   const failedList = card.stagesFailed ?? [];
   return (
-    <div style={{ marginTop: 6, padding: "6px 10px", background: pct >= 75 ? "#fffbeb" : "#fef2f2", border: `1px solid ${color}40`, borderRadius: "var(--radius-md)", fontSize: "0.68rem" }}>
+    <div style={{ marginTop: 6, padding: "6px 10px", background: pct >= 75 ? "var(--amber-bg)" : "var(--rose-bg)", border: `1px solid ${color}40`, borderRadius: "var(--radius-md)", fontSize: "0.68rem" }}>
       <div style={{ fontWeight: 600, color }}>{label} — {pct}% complete</div>
       {failedList.map((f) => (
         <div key={f.stage} style={{ color: "var(--text-muted)", marginTop: 2 }}>• {f.stage}: {f.reason}</div>
@@ -138,14 +146,14 @@ function BuildProgress({ card }: { card: LaunchCard }) {
         const active = !failed && i === idx;
         const pending = i > idx && !failed;
         return (
-          <div key={stage} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, color: done ? "var(--emerald)" : active ? "var(--text-primary)" : pending ? "var(--text-muted)" : "var(--text-muted)", opacity: pending ? 0.5 : 1 }}>
+          <div key={stage} style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, color: done ? "var(--emerald)" : active ? "var(--text-primary)" : "var(--text-muted)", opacity: pending ? 0.5 : 1 }}>
             <span>{done ? "✅" : active ? "⟳" : "○"}</span>
             <span>{STAGE_LABELS[stage]}</span>
           </div>
         );
       })}
       {failed && card.failureReason && (
-        <div style={{ marginTop: 6, color: "#ef4444", fontSize: "0.65rem", wordBreak: "break-word" }}>{card.failureReason}</div>
+        <div style={{ marginTop: 6, color: "var(--rose)", fontSize: "0.65rem", wordBreak: "break-word" }}>{card.failureReason}</div>
       )}
     </div>
   );
@@ -172,17 +180,27 @@ function LaunchCardView({
   const published = card.buildStatus === "published";
   const failed = card.buildStatus === "failed";
 
+  // Determine left border: building → amber, approved (queued) → green, failed → rose
+  const leftBorderColor = building
+    ? "var(--amber)"
+    : isApproved
+    ? "var(--emerald)"
+    : failed
+    ? "var(--rose)"
+    : "transparent";
+
   return (
     <motion.div
       layout
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       style={{
-        background: "var(--bg-card, #111)",
-        border: `1px solid ${published ? "var(--emerald)" : failed ? "#ef4444" : isSkipped ? "var(--border-light)" : "var(--border-medium)"}`,
+        background: "var(--bg-card, var(--bg-surface))",
+        border: `1px solid ${published ? "var(--emerald-border)" : failed ? "var(--rose-border)" : isSkipped ? "var(--border-light)" : "var(--border-medium)"}`,
+        borderLeft: `3px solid ${leftBorderColor}`,
         borderRadius: "var(--radius-lg)",
         padding: "1rem",
-        opacity: isSkipped ? 0.5 : 1,
+        opacity: isSkipped ? 0.4 : 1,
       }}
     >
       {/* Header */}
@@ -192,7 +210,7 @@ function LaunchCardView({
           <ConfidenceBadge level={card.confidenceLevel} />
           <DataSourceBadge dataSource={card.dataSource ?? "ai_estimate"} marketEvidence={card.marketEvidence ?? null} />
         </div>
-        <div style={{ fontSize: "0.75rem", fontWeight: 700, color: card.opportunityScore >= 80 ? "var(--emerald)" : card.opportunityScore >= 60 ? "#f59e0b" : "var(--text-muted)" }}>
+        <div style={{ fontSize: "0.75rem", fontWeight: 700, color: card.opportunityScore >= 80 ? "var(--emerald)" : card.opportunityScore >= 60 ? "var(--amber)" : "var(--text-muted)" }}>
           {card.opportunityScore}/100
         </div>
       </div>
@@ -304,7 +322,7 @@ function LaunchCardView({
       {failed && (
         <button
           onClick={() => onRetry(card.id)}
-          style={{ width: "100%", marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "var(--bg-subtle)", color: "#f59e0b", border: "1px solid #f59e0b40", borderRadius: "var(--radius-md)", padding: "0.5rem", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer" }}
+          style={{ width: "100%", marginTop: 8, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, background: "var(--bg-subtle)", color: "var(--amber)", border: "1px solid var(--amber-border)", borderRadius: "var(--radius-md)", padding: "0.5rem", fontSize: "0.7rem", fontWeight: 600, cursor: "pointer" }}
         >
           <RefreshCw size={12} /> Retry Build
         </button>
@@ -313,7 +331,27 @@ function LaunchCardView({
   );
 }
 
-// ── Stats bar ──────────────────────────────────────────────────────────────────
+// ── Live summary bar ───────────────────────────────────────────────────────────
+
+function SummaryBar({ cards }: { cards: LaunchCard[] }) {
+  const approved = cards.filter((c) => c.status === "approved").length;
+  const skipped = cards.filter((c) => c.status === "skipped").length;
+  const pending = cards.filter((c) => c.status === "pending").length;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 16, padding: "8px 14px", background: "var(--bg-subtle)", borderRadius: "var(--radius-md)", marginBottom: 16, fontSize: "0.78rem", color: "var(--text-secondary)", flexWrap: "wrap" }}>
+      <strong style={{ color: "var(--text-primary)" }}>{cards.length} opportunities ready</strong>
+      <span>·</span>
+      <span><strong style={{ color: "var(--emerald)" }}>{approved}</strong> approved</span>
+      <span>·</span>
+      <span><strong style={{ color: "var(--text-muted)" }}>{skipped}</strong> skipped</span>
+      <span>·</span>
+      <span><strong style={{ color: "var(--text-primary)" }}>{pending}</strong> pending</span>
+    </div>
+  );
+}
+
+// ── Stats bar (bottom) ─────────────────────────────────────────────────────────
 
 function StatsBar({ cards }: { cards: LaunchCard[] }) {
   const approved = cards.filter((c) => c.status === "approved").length;
@@ -324,7 +362,7 @@ function StatsBar({ cards }: { cards: LaunchCard[] }) {
   return (
     <div style={{ display: "flex", gap: 24, padding: "10px 0", borderTop: "1px solid var(--border-light)", marginTop: 32, fontSize: "0.75rem", color: "var(--text-muted)" }}>
       <span><strong style={{ color: "var(--emerald)" }}>{approved}</strong> approved</span>
-      <span><strong style={{ color: "#f59e0b" }}>{building}</strong> building</span>
+      <span><strong style={{ color: "var(--amber)" }}>{building}</strong> building</span>
       <span><strong style={{ color: "var(--text-primary)" }}>{published}</strong> published</span>
       <span><strong style={{ color: "var(--text-secondary)" }}>{pending}</strong> pending</span>
     </div>
@@ -340,10 +378,11 @@ export default function LaunchQueuePage() {
   const [toastMsg, setToastMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [learningContext, setLearningContext] = useState<string | null>(null);
   const [selectedCardIdx, setSelectedCardIdx] = useState(0);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadQueue = useCallback(async () => {
     try {
-      const res = await fetch("/api/launch-queue?action=today");
+      const res = await apiFetch("/api/launch-queue?action=today", { credentials: "include" });
       const json = await res.json() as { success: boolean; data: DailyQueue | null };
       if (json.success) setQueue(json.data);
     } catch {
@@ -355,15 +394,22 @@ export default function LaunchQueuePage() {
 
   useEffect(() => { void loadQueue(); }, [loadQueue]);
 
+  // Cleanup poll interval on unmount
+  useEffect(() => {
+    return () => {
+      if (pollRef.current) clearInterval(pollRef.current);
+    };
+  }, []);
+
   // Load learning context for daily brief
   useEffect(() => {
-    fetch("/api/learning?action=get-context")
+    apiFetch("/api/learning?action=get-context", { credentials: "include" })
       .then((r) => r.json() as Promise<{ success: boolean; data?: { context: string } }>)
       .then((d) => { if (d.success && d.data?.context) setLearningContext(d.data.context); })
       .catch(() => {});
   }, []);
 
-  // B7: Keyboard shortcuts
+  // Keyboard shortcuts: ArrowUp/Down to navigate, A to approve, S to skip
   useEffect(() => {
     let lastKey = "";
     function handleKey(e: KeyboardEvent) {
@@ -371,9 +417,9 @@ export default function LaunchQueuePage() {
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       const pendingCards = queue?.cards.filter((c) => c.status === "pending") ?? [];
       const card = pendingCards[selectedCardIdx];
-      if (e.key === "ArrowRight" || e.key === "n") {
+      if (e.key === "ArrowDown") {
         setSelectedCardIdx((i) => Math.min(i + 1, pendingCards.length - 1));
-      } else if (e.key === "ArrowLeft" || e.key === "p") {
+      } else if (e.key === "ArrowUp") {
         setSelectedCardIdx((i) => Math.max(i - 1, 0));
       } else if (e.key === "a" || e.key === "A") {
         if (lastKey === "a" || lastKey === "A") {
@@ -422,7 +468,7 @@ export default function LaunchQueuePage() {
       try {
         const updates = await Promise.all(
           building.map((c) =>
-            fetch(`/api/launch-queue?action=build-status&id=${c.id}`)
+            apiFetch(`/api/launch-queue?action=build-status&id=${c.id}`, { credentials: "include" })
               .then((r) => r.json() as Promise<{ success: boolean; data: Partial<LaunchCard> }>)
           )
         );
@@ -451,9 +497,9 @@ export default function LaunchQueuePage() {
         ),
       };
     });
-    await fetch("/api/launch-queue?action=decide", {
+    await apiFetch("/api/launch-queue?action=decide", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ cardId, decision }),
     });
   }
@@ -463,9 +509,9 @@ export default function LaunchQueuePage() {
       if (!prev) return prev;
       return { ...prev, cards: prev.cards.map((c) => c.id === cardId ? { ...c, buildStatus: "building", failureReason: null } : c) };
     });
-    await fetch("/api/launch-queue?action=retry-build", {
+    await apiFetch("/api/launch-queue?action=retry-build", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      credentials: "include",
       body: JSON.stringify({ cardId }),
     });
   }
@@ -479,17 +525,36 @@ export default function LaunchQueuePage() {
 
   async function triggerRun() {
     setTriggering(true);
+
+    // Poll GET every 10 seconds — detect cards as soon as they arrive
+    pollRef.current = setInterval(async () => {
+      try {
+        const r = await apiFetch("/api/launch-queue?action=today", { credentials: "include" });
+        const j = await r.json() as { success: boolean; data: DailyQueue | null };
+        if (j.success && j.data && j.data.cards.length > 0) {
+          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+          setQueue(j.data);
+          setTriggering(false);
+        }
+      } catch { /* ignore poll errors */ }
+    }, 10_000);
+
     try {
-      // trigger-run is synchronous — it awaits the full agent run server-side
-      // (fire-and-forget was killing the agent when the response was sent on serverless)
-      const res = await fetch("/api/launch-queue?action=trigger-run", { method: "POST" });
+      // POST runs synchronously on the server (awaits full agent run)
+      // to prevent Vercel serverless function termination
+      const res = await apiFetch("/api/launch-queue?action=trigger-run", {
+        method: "POST",
+        credentials: "include",
+      });
       const json = await res.json() as { success: boolean; data: DailyQueue | null };
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       if (json.success && json.data) {
         setQueue(json.data);
       } else {
         await loadQueue();
       }
     } catch {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
       setToastMsg({ type: "error", text: "Agent run failed. Check logs and try again." });
       await loadQueue();
     } finally {
@@ -498,155 +563,173 @@ export default function LaunchQueuePage() {
   }
 
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
-  const pendingCount = queue?.cards.filter((c) => c.status === "pending").length ?? 0;
+  const cards = queue?.cards ?? [];
+  const pendingCount = cards.filter((c) => c.status === "pending").length;
 
   return (
-    <div style={{ maxWidth: 1100, margin: "0 auto", padding: "2rem 1.5rem" }}>
-      {/* Toast */}
-      {toastMsg && (
-        <div style={{ marginBottom: 16, padding: "0.625rem 1rem", background: toastMsg.type === "success" ? "var(--bg-subtle)" : "#fef2f2", border: `1px solid ${toastMsg.type === "success" ? "var(--border-light)" : "#fecaca"}`, borderRadius: "var(--radius-md)", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.8rem", color: toastMsg.type === "success" ? "var(--text-secondary)" : "#dc2626" }}>
-          <span>{toastMsg.text}</span>
-          <button onClick={() => setToastMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: "1rem" }}>×</button>
-        </div>
-      )}
-      {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
-        <div>
-          <h1 style={{ fontSize: "var(--text-2xl)", fontWeight: 700, color: "var(--text-primary)", margin: "0 0 4px 0" }}>
-            Today&apos;s Launch Queue
-          </h1>
-          <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
-            {today}{queue && queue.cards.length > 0 ? ` · ${queue.cards.length} opportunities ready` : ""}
+    <>
+      {/* Responsive grid styles — inline styles can't express media queries */}
+      <style>{`
+        .lq-card-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+          gap: 16px;
+        }
+        @media (min-width: 768px) {
+          .lq-card-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (min-width: 1200px) {
+          .lq-card-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+      `}</style>
+
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "2rem 1.5rem" }}>
+        {/* Toast */}
+        {toastMsg && (
+          <div style={{ marginBottom: 16, padding: "0.625rem 1rem", background: toastMsg.type === "success" ? "var(--bg-subtle)" : "var(--rose-bg)", border: `1px solid ${toastMsg.type === "success" ? "var(--border-light)" : "var(--rose-border)"}`, borderRadius: "var(--radius-md)", display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "0.8rem", color: toastMsg.type === "success" ? "var(--text-secondary)" : "var(--rose)" }}>
+            <span>{toastMsg.text}</span>
+            <button onClick={() => setToastMsg(null)} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", fontSize: "1rem" }}>×</button>
           </div>
-        </div>
-        {pendingCount > 0 && (
-          <button
-            onClick={() => void approveAllHighConfidence()}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--emerald)", color: "white", border: "none", borderRadius: "var(--radius-md)", padding: "0.5rem 1rem", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" }}
-          >
-            <Zap size={13} /> Approve All High-Confidence
-          </button>
         )}
-      </div>
 
-      {/* Cold-start banner */}
-      {queue?.agentRunLog && (queue.agentRunLog as Record<string, unknown>).isColdStart === true && (
-        <div style={{ padding: "0.625rem 1rem", background: "var(--bg-subtle)", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", marginBottom: 16, fontSize: "0.75rem", color: "var(--text-secondary)" }}>
-          ℹ️ First run — using category defaults. Your queue will personalize after your first products are live.
-        </div>
-      )}
-
-      {/* Manager note */}
-      {queue?.agentRunLog && typeof queue.agentRunLog === "object" && "managerNote" in (queue.agentRunLog as Record<string, unknown>) && (
-        <div style={{ background: "var(--bg-subtle)", border: "1px solid var(--border-light)", borderRadius: "var(--radius-lg)", padding: "12px 16px", marginBottom: 24, fontSize: "0.8rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
-          <span style={{ fontWeight: 600, color: "var(--text-muted)", fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>Manager&apos;s Note</span>
-          <div style={{ marginTop: 4, fontStyle: "italic" }}>
-            "{String((queue.agentRunLog as Record<string, unknown>).managerNote ?? "")}"
-          </div>
-        </div>
-      )}
-
-      {/* B7: Today's Brief — learning context */}
-      {learningContext && (
-        <div style={{ background: "var(--bg-subtle)", border: "1px solid var(--border-light)", borderRadius: "var(--radius-lg)", padding: "14px 18px", marginBottom: 20 }}>
-          <div style={{ fontSize: "0.65rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Today&apos;s Brief · Platform Intelligence</div>
-          <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>{learningContext}</div>
-          {queue?.agentRunLog && !!(queue.agentRunLog as Record<string, unknown>).diversityBreakdown && (
-            <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {Object.entries((queue.agentRunLog as Record<string, unknown>).diversityBreakdown as Record<string, number>).map(([cat, n]) => (
-                <span key={cat} style={{ fontSize: "0.68rem", padding: "2px 8px", borderRadius: 12, background: "var(--bg-elevated)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
-                  {cat}: {String(n)}
-                </span>
-              ))}
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+          <div>
+            <h1 style={{ fontSize: "var(--text-2xl)", fontWeight: 700, color: "var(--color-primary)", margin: "0 0 4px 0" }}>
+              Today&apos;s Launch Queue
+            </h1>
+            <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
+              {today}{cards.length > 0 ? ` · ${cards.length} opportunities ready` : ""}
             </div>
+          </div>
+          {pendingCount > 0 && (
+            <button
+              onClick={() => void approveAllHighConfidence()}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--emerald)", color: "white", border: "none", borderRadius: "var(--radius-md)", padding: "0.5rem 1rem", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" }}
+            >
+              <Zap size={13} /> Approve All High-Confidence
+            </button>
           )}
         </div>
-      )}
 
-      {/* B7: Keyboard shortcut hint */}
-      {queue && queue.cards.length > 0 && (
-        <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginBottom: 16, display: "flex", gap: 12, flexWrap: "wrap" }}>
-          {[["A", "approve"], ["S", "skip"], ["→/←", "navigate"], ["AA", "approve all high-confidence"]].map(([key, action]) => (
-            <span key={key}><kbd style={{ padding: "1px 5px", borderRadius: 4, background: "var(--bg-elevated)", border: "1px solid var(--border-medium)", fontFamily: "monospace", fontSize: "0.65rem" }}>{key}</kbd> {action}</span>
-          ))}
-        </div>
-      )}
-
-      {/* Loading state */}
-      {loading && (
-        <div style={{ textAlign: "center", padding: "4rem", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>
-          <Clock size={24} style={{ marginBottom: 8, opacity: 0.4 }} />
-          <div>Loading today&apos;s queue...</div>
-        </div>
-      )}
-
-      {/* Triggering state — full-screen overlay while agent runs (2–3 min) */}
-      {triggering && (
-        <div style={{ textAlign: "center", padding: "5rem 2rem", color: "var(--text-muted)" }}>
-          <div style={{ display: "inline-block", width: 32, height: 32, border: "3px solid var(--border-medium)", borderTopColor: "var(--emerald)", borderRadius: "50%", animation: "spin 1s linear infinite", marginBottom: 16 }} />
-          <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
-            Agents are building your queue...
+        {/* Cold-start banner */}
+        {queue?.agentRunLog && (queue.agentRunLog as Record<string, unknown>).isColdStart === true && (
+          <div style={{ padding: "0.625rem 1rem", background: "var(--bg-subtle)", border: "1px solid var(--border-light)", borderRadius: "var(--radius-md)", marginBottom: 16, fontSize: "0.75rem", color: "var(--text-secondary)" }}>
+            ℹ️ First run — using category defaults. Your queue will personalize after your first products are live.
           </div>
-          <div style={{ fontSize: "0.75rem", marginBottom: 4 }}>This takes 2–3 minutes. Don&apos;t close this tab.</div>
-          <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: 8 }}>
-            Scout → Validator → Concept Generator → Competition Checker → Scorer → Manager
+        )}
+
+        {/* Manager note */}
+        {queue?.agentRunLog && typeof queue.agentRunLog === "object" && "managerNote" in (queue.agentRunLog as Record<string, unknown>) && (
+          <div style={{ background: "var(--bg-subtle)", border: "1px solid var(--border-light)", borderRadius: "var(--radius-lg)", padding: "12px 16px", marginBottom: 24, fontSize: "0.8rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>
+            <span style={{ fontWeight: 600, color: "var(--text-muted)", fontSize: "0.65rem", textTransform: "uppercase", letterSpacing: "0.06em" }}>Manager&apos;s Note</span>
+            <div style={{ marginTop: 4, fontStyle: "italic" }}>
+              &ldquo;{String((queue.agentRunLog as Record<string, unknown>).managerNote ?? "")}&rdquo;
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* Failed state */}
-      {!loading && !triggering && queue?.status === "failed" && queue.cards.length === 0 && (
-        <div style={{ textAlign: "center", padding: "4rem", color: "var(--text-muted)" }}>
-          <AlertTriangle size={28} style={{ marginBottom: 12, color: "#ef4444", opacity: 0.7 }} />
-          <div style={{ fontSize: "var(--text-sm)", fontWeight: 500, marginBottom: 8, color: "#ef4444" }}>Agent run failed</div>
-          <div style={{ fontSize: "0.75rem", marginBottom: 6 }}>
-            {typeof queue.agentRunLog === "object" && queue.agentRunLog !== null && "error" in (queue.agentRunLog as Record<string, unknown>)
-              ? String((queue.agentRunLog as Record<string, unknown>).error)
-              : "An error occurred during the agent run."}
+        {/* Today's Brief — learning context */}
+        {learningContext && (
+          <div style={{ background: "var(--bg-subtle)", border: "1px solid var(--border-light)", borderRadius: "var(--radius-lg)", padding: "14px 18px", marginBottom: 20 }}>
+            <div style={{ fontSize: "0.65rem", fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>Today&apos;s Brief · Platform Intelligence</div>
+            <div style={{ fontSize: "0.78rem", color: "var(--text-secondary)", lineHeight: 1.6 }}>{learningContext}</div>
+            {queue?.agentRunLog && !!(queue.agentRunLog as Record<string, unknown>).diversityBreakdown && (
+              <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {Object.entries((queue.agentRunLog as Record<string, unknown>).diversityBreakdown as Record<string, number>).map(([cat, n]) => (
+                  <span key={cat} style={{ fontSize: "0.68rem", padding: "2px 8px", borderRadius: 12, background: "var(--bg-elevated)", border: "1px solid var(--border-light)", color: "var(--text-secondary)" }}>
+                    {cat}: {String(n)}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-          <div style={{ fontSize: "0.7rem", marginBottom: 20, color: "var(--text-muted)" }}>Check Vercel logs for details.</div>
-          <button
-            onClick={() => void triggerRun()}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--bg-subtle)", color: "var(--text-secondary)", border: "1px solid var(--border-medium)", borderRadius: "var(--radius-md)", padding: "0.5rem 1.25rem", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer" }}
-          >
-            <RefreshCw size={13} /> Retry Agent Run
-          </button>
-        </div>
-      )}
+        )}
 
-      {/* No queue yet — null or pending with no cards */}
-      {!loading && !triggering && !queue && (
-        <div style={{ textAlign: "center", padding: "4rem", color: "var(--text-muted)" }}>
-          <AlertTriangle size={28} style={{ marginBottom: 12, opacity: 0.4 }} />
-          <div style={{ fontSize: "var(--text-sm)", fontWeight: 500, marginBottom: 8 }}>No queue for today</div>
-          <div style={{ fontSize: "0.75rem", marginBottom: 20 }}>The agents run nightly at 2am UTC. You can trigger a manual run below.</div>
-          <button
-            onClick={() => void triggerRun()}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--emerald)", color: "white", border: "none", borderRadius: "var(--radius-md)", padding: "0.5rem 1.25rem", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" }}
-          >
-            <RefreshCw size={13} /> Trigger Agent Run
-          </button>
-        </div>
-      )}
-
-      {/* Card grid */}
-      {queue && queue.cards.length > 0 && (
-        <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 16 }}>
-            {queue.cards.map((card) => (
-              <LaunchCardView
-                key={card.id}
-                card={card}
-                onApprove={(id) => void decide(id, "approved")}
-                onSkip={(id) => void decide(id, "skipped")}
-                onRetry={(id) => void retryBuild(id)}
-              />
+        {/* Keyboard shortcut hint */}
+        {cards.length > 0 && (
+          <div style={{ fontSize: "0.68rem", color: "var(--text-muted)", marginBottom: 16, display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {[["A", "approve"], ["S", "skip"], ["↑/↓", "navigate"], ["AA", "approve all high-confidence"]].map(([key, action]) => (
+              <span key={key}><kbd style={{ padding: "1px 5px", borderRadius: 4, background: "var(--bg-elevated)", border: "1px solid var(--border-medium)", fontFamily: "monospace", fontSize: "0.65rem" }}>{key}</kbd> {action}</span>
             ))}
           </div>
+        )}
 
-          <StatsBar cards={queue.cards} />
-        </>
-      )}
-    </div>
+        {/* Loading state */}
+        {loading && (
+          <div style={{ textAlign: "center", padding: "4rem", color: "var(--text-muted)", fontSize: "var(--text-sm)" }}>
+            <Clock size={24} style={{ marginBottom: 8, opacity: 0.4 }} />
+            <div>Loading today&apos;s queue...</div>
+          </div>
+        )}
+
+        {/* Triggering state — spinner while agent runs (2–3 min) */}
+        {triggering && (
+          <div style={{ textAlign: "center", padding: "5rem 2rem", color: "var(--text-muted)" }}>
+            <div style={{ display: "inline-block", width: 32, height: 32, border: "3px solid var(--border-medium)", borderTopColor: "var(--emerald)", borderRadius: "50%", animation: "spin 1s linear infinite", marginBottom: 16 }} />
+            <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
+              Agents are building your queue...
+            </div>
+            <div style={{ fontSize: "0.75rem", marginBottom: 4 }}>This takes 2–3 minutes. Don&apos;t close this tab.</div>
+            <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: 8 }}>
+              Scout → Validator → Concept Generator → Competition Checker → Scorer → Manager
+            </div>
+          </div>
+        )}
+
+        {/* Failed state */}
+        {!loading && !triggering && queue?.status === "failed" && cards.length === 0 && (
+          <div style={{ textAlign: "center", padding: "4rem", color: "var(--text-muted)" }}>
+            <AlertTriangle size={28} style={{ marginBottom: 12, color: "var(--rose)", opacity: 0.7 }} />
+            <div style={{ fontSize: "var(--text-sm)", fontWeight: 500, marginBottom: 8, color: "var(--rose)" }}>Agent run failed</div>
+            <div style={{ fontSize: "0.75rem", marginBottom: 6 }}>
+              {typeof queue.agentRunLog === "object" && queue.agentRunLog !== null && "error" in (queue.agentRunLog as Record<string, unknown>)
+                ? String((queue.agentRunLog as Record<string, unknown>).error)
+                : "An error occurred during the agent run."}
+            </div>
+            <div style={{ fontSize: "0.7rem", marginBottom: 20, color: "var(--text-muted)" }}>Check Vercel logs for details.</div>
+            <button
+              onClick={() => void triggerRun()}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--bg-subtle)", color: "var(--text-secondary)", border: "1px solid var(--border-medium)", borderRadius: "var(--radius-md)", padding: "0.5rem 1.25rem", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer" }}
+            >
+              <RefreshCw size={13} /> Retry Agent Run
+            </button>
+          </div>
+        )}
+
+        {/* No queue yet */}
+        {!loading && !triggering && !queue && (
+          <div style={{ textAlign: "center", padding: "4rem", color: "var(--text-muted)" }}>
+            <div style={{ fontSize: "var(--text-sm)", fontWeight: 500, marginBottom: 8 }}>No queue for today</div>
+            <div style={{ fontSize: "0.75rem", marginBottom: 20 }}>The agents run nightly at 2am UTC. You can trigger a manual run below.</div>
+            <button
+              onClick={() => void triggerRun()}
+              style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--emerald)", color: "white", border: "none", borderRadius: "var(--radius-md)", padding: "0.5rem 1.25rem", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" }}
+            >
+              <RefreshCw size={13} /> Trigger Agent Run
+            </button>
+          </div>
+        )}
+
+        {/* Card grid */}
+        {cards.length > 0 && (
+          <>
+            <SummaryBar cards={cards} />
+            <div className="lq-card-grid">
+              {cards.map((card) => (
+                <LaunchCardView
+                  key={card.id}
+                  card={card}
+                  onApprove={(id) => void decide(id, "approved")}
+                  onSkip={(id) => void decide(id, "skipped")}
+                  onRetry={(id) => void retryBuild(id)}
+                />
+              ))}
+            </div>
+            <StatsBar cards={cards} />
+          </>
+        )}
+      </div>
+    </>
   );
 }

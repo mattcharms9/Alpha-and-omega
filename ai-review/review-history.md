@@ -4,6 +4,36 @@ Chronological log of all review sessions with findings and resolutions.
 
 ---
 
+## Session 029 — Fix Launch Queue Render: apiFetch Auth
+**Date:** 2026-06-10
+**Focus:** Launch queue page showed "No queue for today" despite 12 cards in DB — single root cause diagnosed and fixed
+**Files Changed:** 3 files (page.tsx, route.ts, globals.css)
+**Build Status:** ✅ Passing — 0 TypeScript errors, 0 build errors
+**Commit:** (see git log)
+
+### Root Cause and Fix
+
+**Missing x-api-key header (CRITICAL):** `src/proxy.ts` requires all `/api/*` routes to include `x-api-key` matching `API_SECRET_KEY`. The launch-queue page used plain `fetch()` with no headers — proxy returned `{ success: false, error: "Unauthorized" }` (401). Since `json.success` was `false`, `setQueue()` was never called, `queue` stayed `null`, and the empty state was shown.
+
+The Sidebar used `apiFetch()` from `src/lib/api.ts` which injects `x-api-key: NEXT_PUBLIC_API_KEY` — this is why the badge showed "12" while the page body showed the empty state.
+
+*Fix:* All `fetch()` calls in the page replaced with `apiFetch(url, { credentials: "include" })`. This applies to `loadQueue`, `decide`, `retryBuild`, `triggerRun`, build-status polling, and learning context fetch.
+
+### Additional improvements applied per spec
+
+- **Warning triangle eliminated:** Was the AlertTriangle in the "No queue" empty state — disappears once queue loads
+- **`--color-primary` CSS variable added** to `globals.css` as alias for `var(--emerald)`
+- **Page title** changed from `var(--text-primary)` to `var(--color-primary)`
+- **Live summary bar** added above card grid: "12 opportunities ready · X approved · Y skipped · Z pending"
+- **Responsive CSS grid:** 1 col mobile / 2 col at 768px / 3 col at 1200px (via `<style>` tag)
+- **Hardcoded hex colors** in card component replaced with CSS variables (`var(--rose)`, `var(--amber)`, `var(--text-muted)`)
+- **Card states:** approved → green left border; building → amber left border; skipped → opacity 0.4
+- **Keyboard shortcuts:** ArrowRight/Left → ArrowUp/Down
+- **triggerRun:** now polls GET every 10s alongside awaiting the synchronous POST — whichever delivers cards first wins
+- **NextAuth session check** added to trigger-run route handler
+
+---
+
 ## Session 028 — Fix Launch Queue / Agent Pipeline
 **Date:** 2026-06-10
 **Focus:** "No queue for today" on launch queue page — 7 root causes diagnosed and fixed

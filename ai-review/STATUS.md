@@ -1,5 +1,5 @@
 # Alpha & Omega — Operational Status
-**Last Updated:** 2026-06-10 (Session 028 — Fix Launch Queue / Agent Pipeline)
+**Last Updated:** 2026-06-10 (Session 029 — Fix Launch Queue Render: apiFetch auth)
 
 ---
 
@@ -174,7 +174,7 @@
 | Audience-First Knowledge Scanner | ✅ Live | `scanAudienceGaps()` + `AudienceGapReport`; `audience-scan` action; Audience Scan tab on /knowledge (B4) |
 | Seasonal Calendar UI | ✅ Live | Calendar tab on /intelligence; Publish Now + Prepare Now sections + 12-month expandable strip; "Generate →" pre-fills scan (B5) |
 | Autonomous Agent Pipeline | ✅ Live | 5-agent orchestration (Scout→Validator→Generator→Checker→Scorer→Manager); DailyQueue + LaunchCard + AgentRunLog models; 2am UTC cron |
-| Launch Queue UI | ✅ Live | `/launch-queue` — 3-col card grid; approve/skip; build progress polling; Approve All High-Confidence; manager note |
+| Launch Queue UI | ✅ OPERATIONAL | `/launch-queue` — renders 12 cards; apiFetch auth fix; responsive 1/2/3 col grid; approve/skip; build progress polling; live summary bar; keyboard shortcuts; polling trigger |
 | Build Pipeline (Autonomous) | ✅ Live | `runBuildPipeline()` — blueprint→PDF→cover→SEO→mockups→Etsy→Pinterest; per-stage non-fatal fallbacks |
 | Daily Queue Email Digest | ✅ Live | `sendDailyQueueEmail()` — approve/skip deep links; HMAC-SHA256 email action tokens (24h TTL) |
 | Build Completion Notifications | ✅ Live | `sendBuildCompleteNotification()` + `sendBuildFailureAlert()` — email + push |
