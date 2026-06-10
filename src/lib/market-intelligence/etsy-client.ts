@@ -3,8 +3,12 @@ import type { TopSellerListing, RisingListing, PricePoint } from "./types";
 
 function buildPublicHeaders(): Record<string, string> {
   const key = process.env.ETSY_API_KEY;
+  // Accept either name — ETSY_SHARED_SECRET matches integrations/etsy.ts; ETSY_API_SECRET matches .env
+  const secret = process.env.ETSY_SHARED_SECRET ?? process.env.ETSY_API_SECRET;
   if (!key) throw new Error("ETSY_API_KEY not set");
-  return { "x-api-key": key };
+  if (!secret) throw new Error("Neither ETSY_SHARED_SECRET nor ETSY_API_SECRET is set");
+  // Etsy v3 requires "keystring:shared_secret" even for public/unauthenticated endpoints
+  return { "x-api-key": `${key}:${secret}` };
 }
 
 async function delay(ms: number): Promise<void> {
