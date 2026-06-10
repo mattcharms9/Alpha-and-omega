@@ -1,4 +1,5 @@
 import { generateJSON } from "./claude";
+import type { WinningPriceRange } from "@/lib/market-intelligence/types";
 
 export type ProductType = "journal" | "planner" | "workbook" | "digital-system" | "hybrid";
 
@@ -63,16 +64,32 @@ Every product you design must:
 
 You do NOT create generic journals. You create emotional utility systems.`;
 
+export interface MarketIntelligenceContext {
+  winningTitleStructures?: string[];
+  winningPriceRange?: WinningPriceRange;
+  productOpportunity?: string;
+  winningTags?: string[];
+}
+
 export async function generateProductBlueprint(
   emotionalFocus: string,
   productType: ProductType,
-  audienceArchetype: string
+  audienceArchetype: string,
+  marketIntel?: MarketIntelligenceContext
 ): Promise<ProductBlueprint> {
+  const marketIntelSection = marketIntel
+    ? `\nMARKET INTELLIGENCE (use this — it's based on real Etsy sales data):
+${marketIntel.winningTitleStructures?.length ? `Proven title structures: ${marketIntel.winningTitleStructures.slice(0, 3).join(" | ")}` : ""}
+${marketIntel.winningPriceRange ? `Proven price sweet spot: $${marketIntel.winningPriceRange.sweet} (range $${marketIntel.winningPriceRange.min}–$${marketIntel.winningPriceRange.max})` : ""}
+${marketIntel.productOpportunity ? `Specific gap to fill: ${marketIntel.productOpportunity}` : ""}
+${marketIntel.winningTags?.length ? `Proven Etsy tags: ${marketIntel.winningTags.slice(0, 8).join(", ")}` : ""}\n`
+    : "";
+
   const prompt = `Design a premium ${productType} product for Alpha & Omega targeting this emotional landscape:
 
 Emotional Focus: ${emotionalFocus}
 Audience Archetype: ${audienceArchetype}
-Product Type: ${productType}
+Product Type: ${productType}${marketIntelSection}
 
 Create a complete product blueprint that will genuinely help this audience transform. Include:
 

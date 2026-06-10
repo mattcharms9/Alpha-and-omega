@@ -4,6 +4,36 @@ Chronological log of all review sessions with findings and resolutions.
 
 ---
 
+## Session 027 — Zero Guess Engine: Etsy Market Intelligence + Visual Benchmarking
+**Date:** 2026-06-09
+**Focus:** Real Etsy market data powering every product decision — nightly scans, agent wiring, visual benchmarking
+**Files Changed:** 22 new/modified files (6 new lib files, 2 new API routes, 1 cron, 1 page, schema + vercel.json + agent/engine updates)
+**Build Status:** ✅ Passing — 0 TypeScript errors, 0 build errors
+
+### What Was Built
+- **MarketIntelligenceReport + EtsyMarketSnapshot** Prisma models — store nightly Etsy scans
+- **`src/lib/market-intelligence/`** — full engine: etsy-client (public API search), analyzer (Claude extraction), visual-analyzer (Claude Vision), run-scan (orchestration)
+- **`generateJSONWithImages<T>()`** added to `claude.ts` — enables Claude Vision calls across the codebase
+- **`/api/market-intelligence`** route — GET: latest/niche/visual/history; POST: run-full-scan/run-niche
+- **`/api/cron/market-intelligence`** — 1am UTC nightly scan of all 25 TRACKED_NICHES
+- **Market Scout** now reads live DB reports first (falls back to AI if no data <24h old)
+- **Manager Agent** injects top 5 market opportunities + learning context; sets `dataSource`/`marketEvidence` on each LaunchCard
+- **Product Engine** accepts `MarketIntelligenceContext` — injects proven title structures, price sweet spot, specific gaps
+- **Image Engine** accepts `VisualIntelligence` — art direction benchmarked to real top-seller covers
+- **Listing SEO Engine** accepts `provenTags` — up to 8 proven tags as mandatory starting set
+- **`/market-intelligence` page** — snapshot, filterable/sortable niche grid with full expanded reports
+- **LaunchCard** shows green "📊 Live Data" or yellow "🤖 AI Estimate" badge per card
+
+### Schema Changes
+- `LaunchCard`: +`dataSource String @default("ai_estimate")`, +`marketEvidence String?`
+- New: `MarketIntelligenceReport` (25 fields, unique on niche+reportDate)
+- New: `EtsyMarketSnapshot` (summary per night)
+
+### ADR Added
+- ADR-046: Market Intelligence as Data Foundation (added to architecture-decisions.md)
+
+---
+
 ## Review Session 024 — Platform Health Audit + Etsy OAuth Final Confirmation
 **Date:** 2026-06-08
 **Focus:** Confirm all Session 023 Etsy fixes are correct; full audit of every integration, proxy, cron, and env var

@@ -8,7 +8,7 @@ import { signOut, useSession } from "next-auth/react";
 import {
   Zap, Brain, Crosshair, Radio, Package, BookOpen,
   Gamepad2, FileText, PieChart, Send, Settings,
-  Building2, ChevronDown, ChevronUp, Check, Inbox, LogOut,
+  Building2, ChevronDown, ChevronUp, Check, Inbox, LogOut, BarChart2,
 } from "lucide-react";
 import { loadScanFromCache } from "@/lib/cache/intelligence-cache";
 import { PipelineProgress } from "@/components/layout/PipelineProgress";
@@ -25,12 +25,13 @@ const BUILD_ROUTES = ["/build", "/products", "/knowledge", "/games"] as const;
 
 // ── Secondary tools (collapsible — Knowledge + Games moved to Build step) ─────
 const TOOLS = [
-  { href: "/niche-research", label: "Niche Research", icon: Crosshair },
-  { href: "/signals",        label: "Signal Bank",    icon: Radio     },
-  { href: "/brands",         label: "Brand Builder",  icon: Building2 },
-  { href: "/content",        label: "Content",        icon: FileText  },
-  { href: "/portfolio",      label: "Portfolio",      icon: PieChart  },
-  { href: "/settings",       label: "Settings",       icon: Settings  },
+  { href: "/market-intelligence", label: "Market Intel",   icon: BarChart2 },
+  { href: "/niche-research",      label: "Niche Research", icon: Crosshair },
+  { href: "/signals",             label: "Signal Bank",    icon: Radio     },
+  { href: "/brands",              label: "Brand Builder",  icon: Building2 },
+  { href: "/content",             label: "Content",        icon: FileText  },
+  { href: "/portfolio",           label: "Portfolio",      icon: PieChart  },
+  { href: "/settings",            label: "Settings",       icon: Settings  },
 ] as const;
 
 const LS_KEY = "ao:sidebar:toolsExpanded";

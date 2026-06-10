@@ -29,8 +29,13 @@ Return valid JSON: title, description, tags (13 strings), materials, primaryKeyw
 
 export async function generateOptimizedListing(
   blueprint: ProductBlueprint,
-  keywordHints?: string[]
+  keywordHints?: string[],
+  provenTags?: string[]
 ): Promise<OptimizedListing> {
+  const tagSection = provenTags && provenTags.length > 0
+    ? `\nPROVEN ETSY TAGS (from real top sellers — use up to 8 of these as your starting set, fill remaining slots with long-tail variations):\n${provenTags.slice(0, 8).join(", ")}`
+    : "";
+
   const prompt = `Generate a fully optimized Etsy listing for this digital product.
 
 PRODUCT:
@@ -41,12 +46,12 @@ Target audience: ${blueprint.targetAudience}
 Transformation promise: ${blueprint.transformationPromise}
 Description (short): ${blueprint.descriptionShort}
 Keywords: ${(blueprint.keywords as string[]).join(", ")}
-${keywordHints ? `High-volume keyword hints: ${keywordHints.join(", ")}` : ""}
+${keywordHints ? `High-volume keyword hints: ${keywordHints.join(", ")}` : ""}${tagSection}
 
 Requirements:
 - Title: exactly 120-140 characters using format [Emotional Hook] [Product Type] | [Audience] [Key Benefit]
 - Description: 800-1200 words with pain point, bullet list of contents, who it's for, transformation, file info, FAQ
-- Tags: exactly 13 tags, each ≤20 characters
+- Tags: exactly 13 tags, each ≤20 characters${provenTags?.length ? ` — include the proven tags above, then fill with AI-generated long-tail variations` : ""}
 - listingQualityScore must reflect how well these requirements are met (0-100)
 
 Return JSON: title, description, tags (13 strings), materials, primaryKeyword, secondaryKeywords, seoScore, seoNotes, listingQualityScore.`;

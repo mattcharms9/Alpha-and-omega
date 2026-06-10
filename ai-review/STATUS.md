@@ -1,5 +1,5 @@
 # Alpha & Omega — Operational Status
-**Last Updated:** 2026-06-09 (Session 025 — Production deployment complete, 2am cron live)
+**Last Updated:** 2026-06-09 (Session 027 — Zero Guess Engine: Etsy Market Intelligence + Visual Benchmarking)
 
 ---
 
@@ -12,7 +12,7 @@
 | Neon PostgreSQL | ✅ Connected — `ep-crimson-block-aqkbq1ba.c-8.us-east-1.aws.neon.tech` |
 | DB migration | ✅ Applied — all tables synced |
 | Vercel Blob storage | ✅ Connected — `BLOB_READ_WRITE_TOKEN` set |
-| Cron jobs registered | ✅ 11 crons (all daily-or-less for Hobby plan) |
+| Cron jobs registered | ✅ 14 crons (all daily-or-less for Hobby plan) |
 | First agent run | ✅ Triggered manually — `isColdStart: true`, cost $0.25, 95s |
 | 2am UTC agent cron | ✅ Will fire tonight automatically |
 
@@ -181,6 +181,11 @@
 | Cost Controls | ✅ Live | `AGENT_DAILY_COST_LIMIT_USD` env var; pipeline stops + alerts if cap reached; est. $1.10–$1.20/day fully autonomous |
 | Pinterest OAuth Connect UI | ✅ Live | `PinterestPanel` handles connect/disconnect/board-select; `?pinterest=connected` param triggers tab switch + success banner |
 | Etsy OAuth Connect Error Handling | ✅ Live | Connect button shows error message instead of silently failing; `?etsy_error=` param shows banner |
+| Market Intelligence Engine | ✅ Live | 25 niches scanned nightly at 1am UTC; TopSellers/RisingListings/PriceDistribution/VisualStyle per niche |
+| Market Intelligence Dashboard | ✅ Live | `/market-intelligence` — snapshot, filterable niche grid, expanded reports with top sellers + opportunities |
+| Zero-Guess Agent Pipeline | ✅ Live | Scout reads live DB reports; Manager injects market intel; LaunchCards show 📊/🤖 data source badge |
+| Visual Benchmarking | ✅ Live | Claude Vision analyzes top-seller covers; `generateCoverImagePlan()` art-directed to match proven style |
+| Proven Tag Injection | ✅ Live | `generateOptimizedListing()` uses top-seller tags as mandatory starting set (up to 8 of 13) |
 | Build Pipeline Completeness | ✅ Live | `buildCompleteness` (0–100%), `stagesCompleted`, `stagesFailed` on LaunchCard; UI shows warning at <100% |
 | Cold-Start Agent Defaults | ✅ Live | `cold-start-defaults.ts`; zero-catalog accounts get proven Etsy category defaults; manager prompt biased to conservative picks |
 | Etsy Image Resize | ✅ Live | `resizeForEtsy()` in `image-service.ts`; upscales DALL-E output to 2700×2025 (Etsy minimum 2000px) via sharp |
@@ -208,6 +213,9 @@
 | `/api/cron/resolve-ab-tests` | ✅ Live | `0 7 * * *` (7am UTC daily) | Auto-resolves 14-day A/B tests; propagates winning listings |
 | `/api/cron/competitor-monitor` | ✅ Live | `0 4 * * 1` (4am UTC Mondays) | Niche competition growth detection; >30% growth alerts |
 | `/api/cron/run-agent-queue` | ✅ Live | `0 2 * * *` (2am UTC daily) | Run 5-agent pipeline → 15 LaunchCards; sends email digest |
+| `/api/cron/record-learning` | ✅ Live | `50 23 * * *` (10:50pm UTC) | Daily lessons via Claude; update CumulativeLearning + intelligence score |
+| `/api/cron/shop-health` | ✅ Live | `0 7 * * *` (7am UTC) | Etsy shop health score; StrategicAlert if < 60 |
+| `/api/cron/market-intelligence` | ✅ Live | `0 1 * * *` (1am UTC) | Scan 25 niches — TopSellers, RisingListings, VisualStyle; save reports |
 
 ---
 

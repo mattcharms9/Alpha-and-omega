@@ -122,6 +122,8 @@ export interface LaunchCardData {
     scorer: string;
     manager: string;
   };
+  dataSource: "live_etsy_data" | "ai_estimate";
+  marketEvidence?: string;
 }
 
 export interface BuildUpdate {

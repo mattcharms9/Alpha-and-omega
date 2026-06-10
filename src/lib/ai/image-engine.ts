@@ -1,5 +1,6 @@
 import { generateJSON } from "@/lib/ai/claude";
 import type { ProductBlueprint } from "@/lib/ai/product-engine";
+import type { VisualIntelligence } from "@/lib/market-intelligence/types";
 
 export interface CoverImagePrompt {
   dallePrompt: string;
@@ -33,7 +34,19 @@ Image generation best practices:
 
 Your output must be valid JSON matching the CoverImagePlan interface exactly.`;
 
-export async function generateCoverImagePlan(blueprint: ProductBlueprint): Promise<CoverImagePlan> {
+export async function generateCoverImagePlan(
+  blueprint: ProductBlueprint,
+  visualIntel?: VisualIntelligence
+): Promise<CoverImagePlan> {
+  const visualSection = visualIntel
+    ? `\nVISUAL BENCHMARKING (match what's working in this niche on Etsy):
+Style: ${visualIntel.dominantStyle}
+Color palette: ${visualIntel.dominantColors.join(", ")}
+Font style: ${visualIntel.fontStyle}
+Common elements: ${visualIntel.commonElements.join(", ")}
+AVOID: ${visualIntel.whatToAvoid.join(", ")}\n`
+    : "";
+
   return generateJSON<CoverImagePlan>(
     SYSTEM_PROMPT,
     `Generate a CoverImagePlan for this product:
@@ -44,7 +57,7 @@ Type: ${blueprint.type}
 Target Emotion: ${blueprint.targetEmotion}
 Audience: ${blueprint.targetAudience}
 Cover Concept: ${JSON.stringify(blueprint.coverConcept)}
-Brand Aesthetic: ${blueprint.transformationPromise}
+Brand Aesthetic: ${blueprint.transformationPromise}${visualSection}
 
 Return JSON with this exact shape:
 {

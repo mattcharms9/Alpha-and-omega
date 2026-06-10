@@ -899,3 +899,30 @@ function toJson<T>(val: T): Prisma.InputJsonValue {
 **Trade-offs:**
 - Tokens cannot be revoked before expiry — if a digest email is forwarded, the recipient could approve cards. Acceptable: the email is only sent to `ALERT_EMAIL` which is the owner's address.
 
+---
+
+## ADR-046: Market Intelligence as Data Foundation
+**Date:** 2026-06-09
+**Status:** Active
+
+**Decision:** Every product decision in the agent pipeline must be backed by real Etsy market data, not AI training knowledge. A nightly cron at 1am UTC scans all 25 `TRACKED_NICHES` using the Etsy public listings API and stores structured `MarketIntelligenceReport` records per niche. The Market Scout agent reads these reports first; all engines (product, image, SEO) accept optional market intelligence context to override AI defaults with proven data.
+
+**Rationale:**
+- AI training data for "what sells on Etsy" is stale by months or years; the actual market moves faster
+- Review count is a reliable proxy for sales (no sales API exists). 500 reviews × avg price = estimated GMV
+- Visual style of covers directly affects click-through rate — the nightly Claude Vision analysis gives the image engine real benchmarks instead of generic "minimalist Etsy aesthetic" guidance
+- `dataSource: "live_etsy_data" | "ai_estimate"` on every LaunchCard gives the operator immediate confidence in each pick
+
+**Key implementation details:**
+- `src/lib/market-intelligence/etsy-client.ts` — public API search (no OAuth needed); two-phase: bulk search + detail fetch for top 10 by favorers; 100ms delay between requests; 429 retry once
+- `src/lib/market-intelligence/analyzer.ts` — Claude extracts title structures (patterns, not verbatim), proven tags (3+ appearances), price sweet spot, product opportunities, avoidance patterns
+- `src/lib/market-intelligence/visual-analyzer.ts` — Claude Vision analyzes up to 5 cover images per niche; `generateJSONWithImages<T>()` added to `claude.ts` for this
+- `src/lib/market-intelligence/run-scan.ts` — orchestrates: Etsy pull → Claude analysis → visual analysis → DB save → snapshot generation
+- Reports stored in `MarketIntelligenceReport` (unique on niche+reportDate); Snapshot in `EtsyMarketSnapshot`
+
+**Trade-offs:**
+- Etsy public API has no guaranteed SLA — the fallback is AI-estimate mode which existed before this ADR
+- Cover image visual analysis adds ~$0.03/niche in vision tokens — 25 niches = ~$0.75/night, acceptable
+- Title structure extraction is structural (patterns) not literal — avoids derivative content while capturing proven frameworks
+- The first night requires a manual trigger (or the 1am cron); until then, agents fall back to AI estimates
+

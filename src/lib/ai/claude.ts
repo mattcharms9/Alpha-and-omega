@@ -90,3 +90,57 @@ export async function generateJSON<T>(
     throw new Error("AI returned malformed JSON. Try again or reduce the requested count.");
   }
 }
+
+export async function generateJSONWithImages<T>(
+  systemPrompt: string,
+  textPrompt: string,
+  imageUrls: string[],
+  maxTokens = 2000,
+  engineHint = "visual-analyzer"
+): Promise<T> {
+  const start = Date.now();
+
+  const imageContent = imageUrls
+    .filter((url) => url.startsWith("https://"))
+    .slice(0, 5)
+    .map((url) => ({
+      type: "image" as const,
+      source: { type: "url" as const, url },
+    }));
+
+  const response = await withRetry(() =>
+    anthropic.messages.create({
+      model: MODEL,
+      max_tokens: maxTokens,
+      system: [{ type: "text", text: systemPrompt + "\n\nYou MUST respond with valid JSON only. No markdown, no explanation, just raw JSON.", cache_control: { type: "ephemeral" } }],
+      messages: [
+        {
+          role: "user",
+          content: [
+            ...imageContent,
+            { type: "text", text: textPrompt },
+          ],
+        },
+      ],
+    })
+  );
+
+  const content = response.content[0];
+  if (content.type !== "text") throw new Error("Unexpected response type from AI");
+
+  logAICall({
+    engine: engineHint,
+    action: "vision",
+    durationMs: Date.now() - start,
+    inputTokens: response.usage.input_tokens,
+    outputTokens: response.usage.output_tokens,
+    cached: false,
+  });
+
+  const cleaned = content.text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+  try {
+    return JSON.parse(cleaned) as T;
+  } catch {
+    throw new Error("AI vision returned malformed JSON.");
+  }
+}

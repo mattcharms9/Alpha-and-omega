@@ -767,6 +767,9 @@ model LaunchCard {
   stagesCompleted  Json?
   stagesFailed     Json?
 
+  dataSource       String    @default("ai_estimate")
+  marketEvidence   String?
+
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 
@@ -833,4 +836,41 @@ model Bundle {
 
   @@index([status])
   @@index([theme])
+}
+
+model MarketIntelligenceReport {
+  id                     String   @id @default(cuid())
+  niche                  String
+  reportDate             String
+  totalListings          Int
+  topSellers             Json
+  risingListings         Json
+  priceDistribution      Json
+  winningTitleStructures Json
+  winningTags            Json
+  winningPriceRange      Json
+  winningFormats         Json
+  visualStyle            Json
+  productOpportunities   Json
+  avoidPatterns          Json
+  competitionLevel       String
+  opportunityScore       Int
+  createdAt              DateTime @default(now())
+
+  @@unique([niche, reportDate])
+  @@index([niche])
+  @@index([reportDate])
+  @@index([opportunityScore])
+}
+
+model EtsyMarketSnapshot {
+  id                  String   @id @default(cuid())
+  snapshotDate        String
+  nichesAnalyzed      Int
+  totalListingsPulled Int
+  topOpportunities    Json
+  marketSummary       String
+  createdAt           DateTime @default(now())
+
+  @@index([snapshotDate])
 }

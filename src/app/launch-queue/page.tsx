@@ -34,6 +34,8 @@ interface LaunchCard {
   whyYou: string;
   expectedRevenue: string;
   agentReasoning: AgentReasoning;
+  dataSource: string;
+  marketEvidence: string | null;
   status: string;
   buildStatus: string;
   failureReason: string | null;
@@ -91,6 +93,16 @@ function ConfidenceBadge({ level }: { level: string }) {
 function CompetitionDot({ level }: { level: string }) {
   const colors: Record<string, string> = { low: "var(--emerald)", medium: "#f59e0b", high: "#ef4444", saturated: "#6b7280" };
   return <span style={{ display: "inline-block", width: 6, height: 6, borderRadius: "50%", background: colors[level] ?? "#6b7280", marginRight: 4, verticalAlign: "middle" }} />;
+}
+
+function DataSourceBadge({ dataSource, marketEvidence }: { dataSource: string; marketEvidence: string | null }) {
+  const isLive = dataSource === "live_etsy_data";
+  const color = isLive ? "var(--emerald)" : "#f59e0b";
+  return (
+    <span title={marketEvidence ?? undefined} style={{ fontSize: "0.6rem", fontWeight: 700, color, letterSpacing: "0.06em", textTransform: "uppercase", border: `1px solid ${color}40`, borderRadius: 4, padding: "1px 5px", background: `${color}12` }}>
+      {isLive ? "📊 Live Data" : "🤖 AI Estimate"}
+    </span>
+  );
 }
 
 // ── Build progress widget ──────────────────────────────────────────────────────
@@ -175,9 +187,10 @@ function LaunchCardView({
     >
       {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           <span style={{ fontSize: "0.65rem", fontWeight: 700, color: "var(--text-muted)" }}>#{card.position}</span>
           <ConfidenceBadge level={card.confidenceLevel} />
+          <DataSourceBadge dataSource={card.dataSource ?? "ai_estimate"} marketEvidence={card.marketEvidence ?? null} />
         </div>
         <div style={{ fontSize: "0.75rem", fontWeight: 700, color: card.opportunityScore >= 80 ? "var(--emerald)" : card.opportunityScore >= 60 ? "#f59e0b" : "var(--text-muted)" }}>
           {card.opportunityScore}/100

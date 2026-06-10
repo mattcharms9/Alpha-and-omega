@@ -9,6 +9,7 @@ import { runCompetitionCheckerAgent } from "./competition-checker-agent";
 import { runOpportunityScorerAgent } from "./opportunity-scorer-agent";
 import { makeLogFn, estimateCost } from "./agent-logger";
 import { getLearningContext } from "@/lib/learning/daily-ledger";
+import { getTopOpportunitiesByScore } from "@/lib/market-intelligence/analyzer";
 import type { ScoredOpportunity, LaunchCardData, MarketOpportunity, ConfidenceLevel, CompetitionLevel, AgentContext } from "./agent-types";
 
 // B3: Minimum daily card distribution for diversity
@@ -110,9 +111,21 @@ export async function runManagerAgent(date: string): Promise<ManagerResult> {
   const scored = await runOpportunityScorerAgent(concepts, checks, niches, ctx, log).catch(() => []);
   totalCost += estimateCost(5000);
 
-  // Stage 6: Manager Editorial Review (with learning context)
-  const learningContext = await getLearningContext().catch(() => "No learning data available.");
-  const { selected15, managerNote, diversityBreakdown } = await runManagerEditorialReview(scored, ctx, learningContext);
+  // Stage 6: Manager Editorial Review (with learning + market intelligence context)
+  const [learningContext, topMarketOpps] = await Promise.all([
+    getLearningContext().catch(() => "No learning data available."),
+    getTopOpportunitiesByScore(5).catch(() => []),
+  ]);
+
+  const marketIntelContext = topMarketOpps.length > 0
+    ? `\nLIVE ETSY MARKET DATA (last night's intelligence):\n${topMarketOpps.map((o) =>
+        `- ${o.niche}: score ${o.opportunityScore}/100, ${o.competitionLevel} competition, sweet price $${(o.winningPriceRange as { sweet?: number } | null)?.sweet ?? "?"}`
+      ).join("\n")}`
+    : "";
+
+  const liveNicheSet = new Set(topMarketOpps.map((o) => o.niche));
+
+  const { selected15, managerNote, diversityBreakdown } = await runManagerEditorialReview(scored, ctx, learningContext + marketIntelContext, liveNicheSet);
   totalCost += estimateCost(6000);
 
   // Write LaunchCards
@@ -139,6 +152,8 @@ export async function runManagerAgent(date: string): Promise<ManagerResult> {
             whyYou: card.whyYou,
             expectedRevenue: card.expectedRevenue,
             agentReasoning: card.agentReasoning as Prisma.InputJsonValue,
+            dataSource: card.dataSource,
+            marketEvidence: card.marketEvidence,
           },
         })
       )
@@ -166,7 +181,8 @@ export async function runManagerAgent(date: string): Promise<ManagerResult> {
 async function runManagerEditorialReview(
   scored: ScoredOpportunity[],
   ctx: AgentContext,
-  learningContext: string
+  learningContext: string,
+  liveNicheSet: Set<string> = new Set()
 ): Promise<{ selected15: LaunchCardData[]; managerNote: string; diversityBreakdown: Record<string, number> }> {
   if (scored.length === 0) {
     return { selected15: [], managerNote: "No opportunities available today.", diversityBreakdown: {} };
@@ -207,6 +223,7 @@ ${scored.map((s, i) => `${i}: "${s.concept.title}" | score=${s.opportunityScore}
 
   const cards: LaunchCardData[] = selected.map((idx, pos) => {
     const s = scored[idx]!;
+    const isLiveData = liveNicheSet.has(s.concept.keyword);
     return {
       position: pos + 1,
       productTitle: s.concept.title,
@@ -224,6 +241,10 @@ ${scored.map((s, i) => `${i}: "${s.concept.title}" | score=${s.opportunityScore}
       whyNow: s.whyNow,
       whyYou: s.whyYou,
       expectedRevenue: s.expectedRevenue,
+      dataSource: isLiveData ? "live_etsy_data" : "ai_estimate",
+      marketEvidence: isLiveData
+        ? `Based on Etsy market scan: ${s.niche.etsyListingCount} listings, avg price $${s.niche.etsyAvgPrice.toFixed(2)}, opportunity score ${s.opportunityScore}/100.`
+        : undefined,
       agentReasoning: {
         scout: `Found keyword "${s.concept.keyword}" with ${s.niche.etsyListingCount} listings at avg $${s.niche.etsyAvgPrice.toFixed(2)}.`,
         validator: s.niche.validationNotes,
