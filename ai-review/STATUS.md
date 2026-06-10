@@ -1,5 +1,5 @@
 # Alpha & Omega — Operational Status
-**Last Updated:** 2026-06-10 (Session 027B — Fix Etsy Live Market Data)
+**Last Updated:** 2026-06-10 (Session 028 — Fix Launch Queue / Agent Pipeline)
 
 ---
 
@@ -14,6 +14,7 @@
 | Vercel Blob storage | ✅ Connected — `BLOB_READ_WRITE_TOKEN` set |
 | Cron jobs registered | ✅ 14 crons (all daily-or-less for Hobby plan) |
 | First agent run | ✅ Triggered manually — `isColdStart: true`, cost $0.25, 95s |
+| Agent pipeline | ✅ Verified Session 028 — 12 cards, $0.25, 152s, queue status "ready" |
 | 2am UTC agent cron | ✅ Will fire tonight automatically |
 
 **Cron schedule note:** `daily-reminder` runs at 21:00 UTC (fixed, Hobby plan); `process-pin-queue` runs at 12:00 UTC daily. Upgrade to Vercel Pro to restore hourly/every-30min schedules.

@@ -4,6 +4,49 @@ Chronological log of all review sessions with findings and resolutions.
 
 ---
 
+## Session 028 — Fix Launch Queue / Agent Pipeline
+**Date:** 2026-06-10
+**Focus:** "No queue for today" on launch queue page — 7 root causes diagnosed and fixed
+**Files Changed:** 10 files (2 API routes, 1 page, 4 agent files, claude.ts, vercel.json, test script)
+**Build Status:** ✅ Passing — 0 TypeScript errors, 0 build errors
+**Commit:** `a2cf1d8`
+
+### Root Causes and Fixes
+
+**1. Serverless fire-and-forget (CRITICAL):** `trigger-run` used `void runManagerAgent()` and returned immediately. On Vercel serverless, background async work is killed when the response is sent. The agent ran for ~0.1s then died with no queue created.
+*Fix:* `trigger-run` now `await`s `runManagerAgent()` synchronously. `launch-queue` route gets `export const maxDuration = 300` and `export const dynamic = "force-dynamic"`.
+
+**2. Cron route missing exports:** Cron route lacked `export const maxDuration = 300` and `export const dynamic = "force-dynamic"`, risking timeout at Vercel's 10s default.
+*Fix:* Both exports added. `vercel.json` launch-queue bumped from 120s to 300s.
+
+**3. Empty scout → silent 0 cards:** Market scout returns `[]` (not throw) when Etsy API unavailable. The cold-start fallback only caught throws.
+*Fix:* Fallback now triggers on `opportunities.length === 0`. Uses `COLD_START_TOP_CATEGORIES` (6 proven Etsy niches) instead of abstract performance-pattern keywords.
+
+**4. Competition checker kills pipeline with zero data:** When Etsy API unavailable, all listing counts are 0. Claude judges 0-listing data as "too_saturated" → everything filtered → `scored = []` → 0 cards.
+*Fix:* Skip Claude call entirely when no market data exists; return "proceed_with_caution" for all concepts.
+
+**5. generateJSON throws on preamble text:** Claude sometimes adds a sentence before/after the JSON array. `JSON.parse` fails → `.catch(() => [])` → empty concepts cascade to 0 cards.
+*Fix:* `generateJSON` now tries array extraction (`[...]`) and object extraction (`{...}`) before giving up. Handles Claude preamble/postamble text transparently.
+
+**6. Keyword drift across pipeline stages:** Case/plural normalization differences between pipeline stages caused `nicheMap.get()` lookups to miss.
+*Fix:* Opportunity scorer uses case-insensitive + hyphen-normalized keys for all lookups.
+
+**7. UI shows "No queue" for all non-happy states:** Pending and failed queues looked identical to null.
+*Fix:* Distinct UI states for null / pending-with-error / failed / triggering (with full pipeline stage progress message).
+
+### Smoke Test Result
+```
+Queue ID:   cmq7gnnmg000004jxofw8nsf5
+Cards:      12
+Cost:       $0.25
+Duration:   152.7s
+Status:     ready
+First card: "When Someone Who Was Everything Is Gone: A 90-Day Grief Journal..."
+Score:      62/100, medium confidence, cold-start AI estimate
+```
+
+---
+
 ## Session 027B — Fix Etsy Live Market Data
 **Date:** 2026-06-10
 **Focus:** Root-cause diagnosis and fix for Etsy public search returning empty results
