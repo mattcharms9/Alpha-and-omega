@@ -22,13 +22,16 @@ export async function runOpportunityScorerAgent(
 ): Promise<ScoredOpportunity[]> {
   const start = Date.now();
 
-  const checkMap = new Map(checks.map((c) => [c.keyword, c]));
-  const nicheMap = new Map(niches.map((n) => [n.keyword, n]));
+  // Case-insensitive maps to tolerate keyword normalization drift between pipeline stages
+  const normalise = (s: string) => s.toLowerCase().replace(/[_-]/g, " ").trim();
+  const checkMap = new Map(checks.map((c) => [normalise(c.keyword), c]));
+  const nicheMap = new Map(niches.map((n) => [normalise(n.keyword), n]));
 
   // Compute preliminary scores
   const scored = concepts.map((concept) => {
-    const check = checkMap.get(concept.keyword);
-    const niche = nicheMap.get(concept.keyword);
+    const key = normalise(concept.keyword);
+    const check = checkMap.get(key);
+    const niche = nicheMap.get(key);
     if (!check || !niche) return null;
 
     const marketScore = clamp(niche.trendingScore, 0, 100);

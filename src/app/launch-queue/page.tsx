@@ -479,10 +479,22 @@ export default function LaunchQueuePage() {
 
   async function triggerRun() {
     setTriggering(true);
-    await fetch("/api/launch-queue?action=trigger-run", { method: "POST" });
-    await new Promise((r) => setTimeout(r, 2000));
-    await loadQueue();
-    setTriggering(false);
+    try {
+      // trigger-run is synchronous — it awaits the full agent run server-side
+      // (fire-and-forget was killing the agent when the response was sent on serverless)
+      const res = await fetch("/api/launch-queue?action=trigger-run", { method: "POST" });
+      const json = await res.json() as { success: boolean; data: DailyQueue | null };
+      if (json.success && json.data) {
+        setQueue(json.data);
+      } else {
+        await loadQueue();
+      }
+    } catch {
+      setToastMsg({ type: "error", text: "Agent run failed. Check logs and try again." });
+      await loadQueue();
+    } finally {
+      setTriggering(false);
+    }
   }
 
   const today = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
@@ -568,19 +580,51 @@ export default function LaunchQueuePage() {
         </div>
       )}
 
-      {/* Empty state */}
-      {!loading && (!queue || queue.cards.length === 0) && (
+      {/* Triggering state — full-screen overlay while agent runs (2–3 min) */}
+      {triggering && (
+        <div style={{ textAlign: "center", padding: "5rem 2rem", color: "var(--text-muted)" }}>
+          <div style={{ display: "inline-block", width: 32, height: 32, border: "3px solid var(--border-medium)", borderTopColor: "var(--emerald)", borderRadius: "50%", animation: "spin 1s linear infinite", marginBottom: 16 }} />
+          <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
+            Agents are building your queue...
+          </div>
+          <div style={{ fontSize: "0.75rem", marginBottom: 4 }}>This takes 2–3 minutes. Don&apos;t close this tab.</div>
+          <div style={{ fontSize: "0.7rem", color: "var(--text-muted)", marginTop: 8 }}>
+            Scout → Validator → Concept Generator → Competition Checker → Scorer → Manager
+          </div>
+        </div>
+      )}
+
+      {/* Failed state */}
+      {!loading && !triggering && queue?.status === "failed" && queue.cards.length === 0 && (
+        <div style={{ textAlign: "center", padding: "4rem", color: "var(--text-muted)" }}>
+          <AlertTriangle size={28} style={{ marginBottom: 12, color: "#ef4444", opacity: 0.7 }} />
+          <div style={{ fontSize: "var(--text-sm)", fontWeight: 500, marginBottom: 8, color: "#ef4444" }}>Agent run failed</div>
+          <div style={{ fontSize: "0.75rem", marginBottom: 6 }}>
+            {typeof queue.agentRunLog === "object" && queue.agentRunLog !== null && "error" in (queue.agentRunLog as Record<string, unknown>)
+              ? String((queue.agentRunLog as Record<string, unknown>).error)
+              : "An error occurred during the agent run."}
+          </div>
+          <div style={{ fontSize: "0.7rem", marginBottom: 20, color: "var(--text-muted)" }}>Check Vercel logs for details.</div>
+          <button
+            onClick={() => void triggerRun()}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--bg-subtle)", color: "var(--text-secondary)", border: "1px solid var(--border-medium)", borderRadius: "var(--radius-md)", padding: "0.5rem 1.25rem", fontSize: "0.8rem", fontWeight: 600, cursor: "pointer" }}
+          >
+            <RefreshCw size={13} /> Retry Agent Run
+          </button>
+        </div>
+      )}
+
+      {/* No queue yet — null or pending with no cards */}
+      {!loading && !triggering && !queue && (
         <div style={{ textAlign: "center", padding: "4rem", color: "var(--text-muted)" }}>
           <AlertTriangle size={28} style={{ marginBottom: 12, opacity: 0.4 }} />
           <div style={{ fontSize: "var(--text-sm)", fontWeight: 500, marginBottom: 8 }}>No queue for today</div>
           <div style={{ fontSize: "0.75rem", marginBottom: 20 }}>The agents run nightly at 2am UTC. You can trigger a manual run below.</div>
           <button
             onClick={() => void triggerRun()}
-            disabled={triggering}
-            style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--bg-subtle)", color: "var(--text-secondary)", border: "1px solid var(--border-medium)", borderRadius: "var(--radius-md)", padding: "0.5rem 1.25rem", fontSize: "0.8rem", fontWeight: 600, cursor: triggering ? "not-allowed" : "pointer", opacity: triggering ? 0.6 : 1 }}
+            style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--emerald)", color: "white", border: "none", borderRadius: "var(--radius-md)", padding: "0.5rem 1.25rem", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" }}
           >
-            <RefreshCw size={13} className={triggering ? "animate-spin" : ""} />
-            {triggering ? "Running agents..." : "Trigger Agent Run"}
+            <RefreshCw size={13} /> Trigger Agent Run
           </button>
         </div>
       )}

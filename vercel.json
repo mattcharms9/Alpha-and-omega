@@ -17,7 +17,7 @@
     "src/app/api/variants/route.ts":                    { "maxDuration": 60 },
     "src/app/api/generate-image/route.ts":              { "maxDuration": 60 },
     "src/app/api/pdf/route.ts":                         { "maxDuration": 60 },
-    "src/app/api/launch-queue/route.ts":                { "maxDuration": 120 },
+    "src/app/api/launch-queue/route.ts":                { "maxDuration": 300 },
     "src/app/api/learning/route.ts":                    { "maxDuration": 60 },
     "src/app/api/bundles/route.ts":                     { "maxDuration": 60 },
     "src/app/api/etsy/shop/route.ts":                   { "maxDuration": 60 },

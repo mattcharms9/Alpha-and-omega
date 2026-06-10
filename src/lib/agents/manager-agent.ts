@@ -8,6 +8,7 @@ import { runConceptGeneratorAgent } from "./concept-generator-agent";
 import { runCompetitionCheckerAgent } from "./competition-checker-agent";
 import { runOpportunityScorerAgent } from "./opportunity-scorer-agent";
 import { makeLogFn, estimateCost } from "./agent-logger";
+import { COLD_START_TOP_CATEGORIES } from "./cold-start-defaults";
 import { getLearningContext } from "@/lib/learning/daily-ledger";
 import { getTopOpportunitiesByScore } from "@/lib/market-intelligence/analyzer";
 import type { ScoredOpportunity, LaunchCardData, MarketOpportunity, ConfidenceLevel, CompetitionLevel, AgentContext } from "./agent-types";
@@ -72,14 +73,19 @@ export async function runManagerAgent(date: string): Promise<ManagerResult> {
     opportunities = await runMarketScoutAgent(ctx, log);
     totalCost += estimateCost(600);
   } catch {
-    // Fallback: synthetic opportunities from performance patterns
-    opportunities = ctx.performancePatterns.slice(0, 10).map((p, i) => ({
-      keyword: `${p.value} ${ctx.catalogSnapshot.topFormats[0] ?? "journal"}`,
-      category: p.dimension === "emotion" ? p.value : "general",
-      etsyListingCount: 200 + i * 50,
-      etsyAvgPrice: 12 + i,
-      trendingScore: 60 - i * 2,
-      competitionLevel: "medium" as const,
+    opportunities = [];
+  }
+
+  // Fallback when scout returns empty (Etsy API unavailable, cold start, etc.)
+  // Use proven Etsy niches with conservative estimates so downstream stages can run.
+  if (opportunities.length === 0) {
+    opportunities = COLD_START_TOP_CATEGORIES.map((keyword, i) => ({
+      keyword,
+      category: keyword.split(" ").pop() ?? "general",
+      etsyListingCount: 800 - i * 80,
+      etsyAvgPrice: 9 + i * 1.5,
+      trendingScore: 72 - i * 4,
+      competitionLevel: i < 3 ? ("medium" as const) : ("low" as const),
       topRelatedKeywords: [],
       priceGap: false,
       source: "performance_adjacency" as const,

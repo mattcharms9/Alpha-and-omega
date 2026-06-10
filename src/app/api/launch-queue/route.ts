@@ -7,6 +7,9 @@ import { runBuildPipeline } from "@/lib/agents/build-pipeline";
 import { runManagerAgent } from "@/lib/agents/manager-agent";
 import { verifyEmailActionToken } from "@/lib/auth/email-action-tokens";
 
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
+
 const DecideSchema = z.object({
   cardId: z.string().min(1),
   decision: z.enum(["approved", "skipped"]),
@@ -158,10 +161,30 @@ export async function POST(req: NextRequest) {
 
     if (action === "trigger-run") {
       const today = new Date().toISOString().slice(0, 10);
-      void runManagerAgent(today).catch((err) => {
-        console.error("[launch-queue] Manual agent run failed:", err);
+
+      // Return existing queue if already ready — avoid duplicate runs
+      const existing = await prisma.dailyQueue.findUnique({
+        where: { date: today },
+        include: { cards: { orderBy: { position: "asc" } } },
       });
-      return NextResponse.json({ success: true, data: { message: "Agent run triggered", date: today } });
+      if (existing && (existing.status === "ready" || existing.status === "partial") && existing.cards.length > 0) {
+        return NextResponse.json({ success: true, data: existing });
+      }
+
+      // Run synchronously — fire-and-forget with void kills the agent on serverless
+      // because the function exits when the response is sent, terminating the process.
+      try {
+        await runManagerAgent(today);
+      } catch (err) {
+        console.error("[launch-queue] trigger-run agent failed:", err);
+        // Fall through: return whatever partial results were saved
+      }
+
+      const queue = await prisma.dailyQueue.findUnique({
+        where: { date: today },
+        include: { cards: { orderBy: { position: "asc" } } },
+      });
+      return NextResponse.json({ success: true, data: queue ?? null });
     }
 
     if (action === "retry-build") {

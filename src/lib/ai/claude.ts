@@ -83,12 +83,31 @@ export async function generateJSON<T>(
 
   const cleaned = text.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
 
+  // Try parsing the full cleaned text first
   try {
     return JSON.parse(cleaned) as T;
-  } catch {
-    console.error("[AI] Failed to parse JSON response. Raw length:", cleaned.length);
-    throw new Error("AI returned malformed JSON. Try again or reduce the requested count.");
+  } catch { /* fall through to extraction */ }
+
+  // Extract the outermost JSON array (Claude sometimes adds a sentence before/after)
+  const arrStart = cleaned.indexOf("[");
+  const arrEnd = cleaned.lastIndexOf("]");
+  if (arrStart !== -1 && arrEnd > arrStart) {
+    try {
+      return JSON.parse(cleaned.slice(arrStart, arrEnd + 1)) as T;
+    } catch { /* fall through */ }
   }
+
+  // Extract the outermost JSON object
+  const objStart = cleaned.indexOf("{");
+  const objEnd = cleaned.lastIndexOf("}");
+  if (objStart !== -1 && objEnd > objStart) {
+    try {
+      return JSON.parse(cleaned.slice(objStart, objEnd + 1)) as T;
+    } catch { /* fall through */ }
+  }
+
+  console.error("[AI] Failed to parse JSON response. Raw length:", cleaned.length);
+  throw new Error("AI returned malformed JSON. Try again or reduce the requested count.");
 }
 
 export async function generateJSONWithImages<T>(

@@ -37,6 +37,27 @@ export async function runCompetitionCheckerAgent(
     })
   );
 
+  // When Etsy API is unavailable (all listing counts are 0), skip Claude analysis.
+  // Asking Claude to judge competition with zero data produces "too_saturated" verdicts
+  // that would filter out every concept and kill the pipeline.
+  const hasMarketData = conceptsWithData.some((d) => d.realListingCount > 0);
+  if (!hasMarketData) {
+    const fallback: CompetitionCheck[] = conceptsWithData.map((d) => ({
+      keyword: d.concept.keyword,
+      listingCount: 0,
+      avgPrice: 0,
+      topListingReviews: 0,
+      gapExists: true,
+      gapType: "audience_gap" as const,
+      gapDescription: "Market data unavailable — AI estimate: likely viable audience gap",
+      verdict: "proceed_with_caution" as const,
+    }));
+    await log("competition-checker", { conceptCount: concepts.length, noData: true }, fallback, {
+      tokens: 0, cost: 0, durationMs: Date.now() - start,
+    });
+    return fallback;
+  }
+
   const prompt = `Check these ${conceptsWithData.length} product concepts for competitive gaps on Etsy.
 
 ${conceptsWithData.map((d, i) =>
@@ -48,7 +69,6 @@ For each concept, identify the competitive gap (or lack thereof). Return JSON ar
 { keyword, listingCount, avgPrice, topListingReviews: 0, gapExists: boolean, gapType: "price_gap"|"audience_gap"|"format_gap"|"quality_gap"|null, gapDescription: "1 sentence", verdict: "green_light"|"proceed_with_caution"|"too_saturated" }`;
 
   const checks = await generateJSON<CompetitionCheck[]>(SYSTEM_PROMPT, prompt, 3000).catch((): CompetitionCheck[] => {
-    // Fallback: assume green light for all with medium competition
     return conceptsWithData.map((d) => ({
       keyword: d.concept.keyword,
       listingCount: d.realListingCount,

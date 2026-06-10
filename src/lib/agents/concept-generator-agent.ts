@@ -40,7 +40,7 @@ ${batch.map((n, i) => `${i + 1}. keyword="${n.keyword}", competitionLevel=${n.co
 Return JSON array of ${batch.length} objects:
 { keyword, title (specific, not generic), format, targetAudience (specific person), emotionalHook (core desire/pain), suggestedPrice (number), keyDifferentiator (what gaps this fills), etsySearchTerms (5 keyword phrases) }`;
 
-    const concepts = await generateJSON<ProductConcept[]>(SYSTEM_PROMPT, prompt, 1500).catch(() => []);
+    const concepts = await generateJSON<ProductConcept[]>(SYSTEM_PROMPT, prompt, 2500).catch(() => []);
     allConcepts.push(...(Array.isArray(concepts) ? concepts : []));
     totalTokens += 1500 + batch.length * 150;
   }
