@@ -1,5 +1,5 @@
 # Alpha & Omega — Operational Status
-**Last Updated:** 2026-06-09 (Session 027 — Zero Guess Engine: Etsy Market Intelligence + Visual Benchmarking)
+**Last Updated:** 2026-06-10 (Session 027B — Fix Etsy Live Market Data)
 
 ---
 
@@ -181,7 +181,7 @@
 | Cost Controls | ✅ Live | `AGENT_DAILY_COST_LIMIT_USD` env var; pipeline stops + alerts if cap reached; est. $1.10–$1.20/day fully autonomous |
 | Pinterest OAuth Connect UI | ✅ Live | `PinterestPanel` handles connect/disconnect/board-select; `?pinterest=connected` param triggers tab switch + success banner |
 | Etsy OAuth Connect Error Handling | ✅ Live | Connect button shows error message instead of silently failing; `?etsy_error=` param shows banner |
-| Market Intelligence Engine | ✅ Live | 25 niches scanned nightly at 1am UTC; TopSellers/RisingListings/PriceDistribution/VisualStyle per niche |
+| Market Intelligence Engine | ✅ Live (fixed) | 25 niches scanned nightly at 1am UTC; TopSellers/RisingListings/PriceDistribution/VisualStyle per niche; auth fixed Session 027B |
 | Market Intelligence Dashboard | ✅ Live | `/market-intelligence` — snapshot, filterable niche grid, expanded reports with top sellers + opportunities |
 | Zero-Guess Agent Pipeline | ✅ Live | Scout reads live DB reports; Manager injects market intel; LaunchCards show 📊/🤖 data source badge |
 | Visual Benchmarking | ✅ Live | Claude Vision analyzes top-seller covers; `generateCoverImagePlan()` art-directed to match proven style |

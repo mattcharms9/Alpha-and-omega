@@ -4,6 +4,33 @@ Chronological log of all review sessions with findings and resolutions.
 
 ---
 
+## Session 027B — Fix Etsy Live Market Data
+**Date:** 2026-06-10
+**Focus:** Root-cause diagnosis and fix for Etsy public search returning empty results
+**Files Changed:** 1 lib file (`etsy-client.ts`) + 2 new diagnostic scripts
+**Build Status:** ✅ Passing — 0 TypeScript errors, 0 build errors
+**Commit:** `a9f3e85`
+
+### Root Cause
+`buildPublicHeaders()` in `etsy-client.ts` was sending only the Etsy API keystring in the `x-api-key` header. Etsy v3 requires `keystring:shared_secret` format **even for unauthenticated public endpoints**. Every search returned `403 Forbidden: Shared secret is required in x-api-key header.` which was silently caught and returned as empty `[]`.
+
+### Fix
+Updated `buildPublicHeaders()` to read `ETSY_SHARED_SECRET ?? ETSY_API_SECRET` and send the combined `key:secret` header. The fallback accepts either env var name — `ETSY_SHARED_SECRET` matches the existing `integrations/etsy.ts` pattern for Vercel; `ETSY_API_SECRET` is what `.env` has locally.
+
+### Verified
+- 5 direct Etsy API tests all 200 OK (2,464 results for "grief journal printable")
+- Claude analysis pipeline runs end-to-end (confirmed by log output during test)
+- `tsc --noEmit` and `npm run build` both clean
+
+### Action Required for Production
+Verify Vercel has at least one of these env vars set:
+- `ETSY_SHARED_SECRET=k9zimmwaag` (preferred — matches existing shop management code)
+- `ETSY_API_SECRET=k9zimmwaag` (fallback — matches .env)
+
+If Etsy shop publishing (create listing / upload file) has been working in production, `ETSY_SHARED_SECRET` is already set and no Vercel change is needed. If not, add `ETSY_API_SECRET=k9zimmwaag` to Vercel dashboard.
+
+---
+
 ## Session 027 — Zero Guess Engine: Etsy Market Intelligence + Visual Benchmarking
 **Date:** 2026-06-09
 **Focus:** Real Etsy market data powering every product decision — nightly scans, agent wiring, visual benchmarking
