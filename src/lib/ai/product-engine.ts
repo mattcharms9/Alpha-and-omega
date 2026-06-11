@@ -62,7 +62,9 @@ Every product you design must:
 4. Feel premium, intentional, and emotionally intelligent
 5. Have strong commercial viability
 
-You do NOT create generic journals. You create emotional utility systems.`;
+You do NOT create generic journals. You create emotional utility systems.
+
+CRITICAL FORMATTING RULE: Do not use em dashes or hyphens anywhere in your output. Use commas, colons, periods, or line breaks instead.`;
 
 export interface MarketIntelligenceContext {
   winningTitleStructures?: string[];

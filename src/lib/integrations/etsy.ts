@@ -207,12 +207,14 @@ export async function uploadListingImage(
   shopId: string,
   listingId: string,
   imageBuffer: Buffer,
-  filename: string
+  filename: string,
+  rank?: number
 ): Promise<EtsyImageResponse> {
   const ext = filename.split(".").pop()?.toLowerCase() ?? "png";
   const mimeType = ext === "jpg" || ext === "jpeg" ? "image/jpeg" : "image/png";
   const formData = new FormData();
   formData.append("image", new Blob([new Uint8Array(imageBuffer)], { type: mimeType }), filename);
+  if (rank !== undefined) formData.append("rank", String(rank));
 
   const keystring = process.env.ETSY_API_KEY;
   const sharedSecret = process.env.ETSY_SHARED_SECRET ?? process.env.ETSY_API_SECRET;

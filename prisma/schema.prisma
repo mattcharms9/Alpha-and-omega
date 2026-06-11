@@ -855,12 +855,26 @@ model MarketIntelligenceReport {
   avoidPatterns          Json
   competitionLevel       String
   opportunityScore       Int
+  salesCount             Int      @default(0)
   createdAt              DateTime @default(now())
 
   @@unique([niche, reportDate])
   @@index([niche])
   @@index([reportDate])
   @@index([opportunityScore])
+}
+
+model LearningEntry {
+  id         String   @id @default(cuid())
+  lessonType String
+  content    String
+  niche      String?
+  productId  String?
+  revenue    Float?
+  createdAt  DateTime @default(now())
+
+  @@index([lessonType])
+  @@index([createdAt])
 }
 
 model EtsyMarketSnapshot {

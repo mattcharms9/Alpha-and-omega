@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { createHmac } from "crypto";
 import { sendSaleAlert } from "@/lib/notifications/email";
+import { sanitizeForEtsy } from "@/lib/utils/etsy-sanitizer";
+
+export const maxDuration = 30;
 
 interface EtsyReceiptEvent {
   shop_id: number;
@@ -14,7 +17,7 @@ interface EtsyReceiptEvent {
   buyer_email: string;
 }
 
-// POST — receives Etsy webhook events
+// POST — receives Etsy webhook events; always returns 200 to prevent Etsy retries
 export async function POST(req: NextRequest) {
   const secret = process.env.ETSY_WEBHOOK_SECRET;
 
@@ -25,18 +28,19 @@ export async function POST(req: NextRequest) {
     if (signature !== expected) {
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
-    // Re-parse body as JSON after reading as text
     try {
       await handleEvent(JSON.parse(body) as EtsyReceiptEvent);
-    } catch {
-      return NextResponse.json({ error: "Processing failed" }, { status: 500 });
+    } catch (err) {
+      console.error("[webhook] handleEvent failed:", err instanceof Error ? err.message : err);
     }
   } else {
-    // No secret configured — process without verification (dev mode)
     const event = await req.json() as EtsyReceiptEvent;
-    await handleEvent(event).catch(() => {});
+    await handleEvent(event).catch((err) =>
+      console.error("[webhook] handleEvent failed (no-secret mode):", err instanceof Error ? err.message : err)
+    );
   }
 
+  // Always 200 — Etsy will retry on non-2xx
   return NextResponse.json({ received: true });
 }
 
@@ -49,6 +53,14 @@ async function handleEvent(event: EtsyReceiptEvent): Promise<void> {
     if (!listing) continue;
 
     const amount = (tx.price.amount / tx.price.divisor) * tx.quantity;
+
+    // Fetch product to get primary keyword for niche matching
+    const product = await prisma.product.findUnique({
+      where: { id: listing.productId },
+      select: { keywords: true },
+    });
+    const primaryKeyword = (product?.keywords as string[])?.[0] ?? "";
+    const safeTitle = sanitizeForEtsy(listing.title);
 
     await Promise.all([
       prisma.etsyListing.update({
@@ -64,7 +76,26 @@ async function handleEvent(event: EtsyReceiptEvent): Promise<void> {
           source: "etsy_webhook",
         },
       }),
+      prisma.learningEntry.create({
+        data: {
+          lessonType: "sale_validated",
+          content: `Sold ${tx.quantity} unit${tx.quantity > 1 ? "s" : ""} of "${safeTitle}" for $${amount.toFixed(2)} via Etsy. Niche: ${primaryKeyword}`,
+          niche: primaryKeyword || null,
+          productId: listing.productId,
+          revenue: amount,
+        },
+      }),
     ]);
+
+    // Increment salesCount on matching MarketIntelligenceReport
+    if (primaryKeyword) {
+      await prisma.marketIntelligenceReport.updateMany({
+        where: { niche: { contains: primaryKeyword } },
+        data: { salesCount: { increment: tx.quantity } },
+      }).catch((err) =>
+        console.warn("[webhook] salesCount increment failed:", err instanceof Error ? err.message : err)
+      );
+    }
 
     void sendSaleAlert({
       productTitle: listing.title,

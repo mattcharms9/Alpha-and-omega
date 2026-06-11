@@ -4,6 +4,37 @@ Chronological log of all review sessions with findings and resolutions.
 
 ---
 
+## Session 035 — Compounding Pipeline: Gallery, Visual Intel Covers, Sale Learning Loop, Pinterest Token Fix, Weekly Intelligence Email, Em-Dash Enforcement
+**Date:** 2026-06-11
+**Focus:** Make every published product more likely to sell than the last, and every sale improve tomorrow's products. Ten-part spec: sanitizer utility, gallery service (4 DALL-E images at ranks 2-5), visual intel cover wiring, sale learning loop via LearningEntry model, Pinterest stage using refreshed token, 6-section weekly intelligence email, em-dash enforcement across all AI prompts, tsc + build + E2E tests.
+**Files Changed:** 12 files (etsy-sanitizer.ts [new], gallery-service.ts [new], LearningEntry model [new schema], image-service.ts, etsy-publish-service.ts, webhook/route.ts, manager-agent.ts, build-pipeline.ts, weekly-report/route.ts, listing-seo-engine.ts, product-engine.ts, agent-types.ts)
+**Build Status:** TSC clean, 72 pages, 0 errors.
+
+### What Changed and Why
+
+**1. `sanitizeForEtsy()` enforced at all Etsy API boundaries (CRITICAL):**
+Em dashes and hyphens in AI-generated content caused buyer-facing strings to contain characters that look unprofessional on Etsy. `src/lib/utils/etsy-sanitizer.ts` strips em dashes (to space), spaced hyphens (to ", "), double hyphens (to space), and word-hyphen-word patterns (to ", "). Applied to title, description, and every tag in `etsy-publish-service.ts`. Applied to gallery image text. Applied to Pinterest pin title and description.
+
+**2. Gallery service generating 4 images at listing ranks 2-5 (HIGH):**
+Listings with only a cover image underperform versus listings with 5 images. New `gallery-service.ts` generates 4 DALL-E images after Etsy listing is created: "What Is Inside" overview (rank 2), interior page spread (rank 3), iPad device mockup (rank 4), "What You Get" summary (rank 5). Each call has a 25s AbortController timeout. Upload failures are logged but never throw to caller. Stage is optional (120s) in pipeline.
+
+**3. Cover image built directly from visual intelligence data (HIGH):**
+Previous cover generation delegated to Claude to write the DALL-E prompt (`generateCoverImagePlan`), discarding valuable structured data in `MarketIntelligenceReport.visualStyle`. New approach builds the DALL-E prompt deterministically from `dominantColors`, `commonElements`, `dominantStyle`, `whatToAvoid`, and `titleOnCover` fields. Falls back to Claude plan when no recent report exists.
+
+**4. Sale learning loop via new `LearningEntry` model (HIGH):**
+Webhook now writes a `LearningEntry` with `lessonType: "sale_validated"` on every Etsy sale, and increments `MarketIntelligenceReport.salesCount` for matching niche. Manager agent queries the last 30 days of sale_validated entries and injects them into both Path A and Path B prompts so future card generation biases toward proven product types.
+
+**5. Pinterest stage uses refreshed token and actual listing URL (MEDIUM):**
+Old `autoPromoteProduct` used `conn.accessToken` directly (no refresh), guessed image URL as a static path, and ran fire-and-forget. New `pinterest_pin` stage calls `getValidPinterestToken()` (auto-refreshes), uses `product.coverImagePath` for the real image URL, uses the actual `etsyListingUrl` returned by the publish stage, and applies `sanitizeForEtsy` to pin title and description.
+
+**6. Weekly report replaced SMS with 6-section HTML intelligence email (MEDIUM):**
+Old route sent a single SMS via Twilio. New route sends a rich HTML email via Resend with 6 sections: (1) 7-day revenue aggregate, (2) high-views no-sales opportunity listings, (3) conversion winners, (4) recent LearningEntry records, (5) queue performance stats, (6) tonight's strategy via Claude call with 15s timeout and hard fallback.
+
+**7. No-dash prompt rule added to all AI content generators (MEDIUM):**
+Added "CRITICAL FORMATTING RULE: Do not use em dashes or hyphens anywhere in your output. Use commas, colons, periods, or line breaks instead." to `listing-seo-engine.ts` SYSTEM_PROMPT and `product-engine.ts` SYSTEM_PROMPT. Enforces at prompt level before sanitizer runs.
+
+---
+
 ## Session 034 — Bulletproof Failsafe Build Pipeline: Per-Stage Timeouts, Cover Gate Removal, Taxonomy Fix, Visual Intel Wiring
 **Date:** 2026-06-11
 **Focus:** Pipeline froze at mockup/cover stage every run and never reached Etsy. Nine-part spec: diagnose all pipeline files, rewrite build-pipeline.ts with `runStage<T>` generic wrapper, fix cover image service to query visual intel and add AbortController, fix Etsy taxonomy (326) and remove cover gate, fix Approve All button to use Promise.all, E2E test, docs+commit.

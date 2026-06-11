@@ -25,6 +25,8 @@ SEO score (0-100): keyword placement in title (30pts), tag quality and count (30
 
 Listing quality score (0-100): title length 120-140 chars (20pts), exactly 13 tags (20pts), description 800+ words (30pts), seoScore (30pts). A score below 75 means the listing should be regenerated.
 
+CRITICAL FORMATTING RULE: Do not use em dashes or hyphens anywhere in your output. Use commas, colons, periods, or line breaks instead.
+
 Return valid JSON: title, description, tags (13 strings), materials, primaryKeyword, secondaryKeywords, seoScore, seoNotes, listingQualityScore.`;
 
 export async function generateOptimizedListing(

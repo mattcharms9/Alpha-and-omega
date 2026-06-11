@@ -12,6 +12,7 @@ export type BuildStatus =
   | "optimizing_seo"
   | "generating_mockups"
   | "creating_listing"
+  | "generating_gallery"
   | "publishing"
   | "building"
   | "built"

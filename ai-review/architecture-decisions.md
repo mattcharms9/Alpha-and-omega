@@ -926,3 +926,30 @@ function toJson<T>(val: T): Prisma.InputJsonValue {
 - Title structure extraction is structural (patterns) not literal — avoids derivative content while capturing proven frameworks
 - The first night requires a manual trigger (or the 1am cron); until then, agents fall back to AI estimates
 
+
+---
+
+## ADR-026: Compounding Pipeline — Learning Loop, Gallery Images, Direct Visual Intel Cover Generation
+**Date:** 2026-06-11
+**Status:** Active
+
+**Decision:** Every Etsy sale writes a `LearningEntry` (not updates a singleton). Cover DALL-E prompt is built directly from `MarketIntelligenceReport.visualStyle` fields (not delegated to Claude). Pipeline generates 4 gallery images at ranks 2-5 after listing is created. All buyer-facing strings pass through `sanitizeForEtsy()` before reaching any API or PDF.
+
+**Rationale:**
+- `CumulativeLearning` was a singleton with no per-event rows, lessonType, or content field — it could not store sale-specific data. A new `LearningEntry` model enables per-sale records with niche, productId, and revenue.
+- The `generateCoverImagePlan` Claude call introduced variability and added latency when `MarketIntelligenceReport.visualStyle` already contained structured data (dominantColors, commonElements, whatToAvoid). Bypassing Claude gives deterministic, data-driven prompts.
+- Listings with 5 images significantly outperform single-image listings in Etsy search. The gallery stage adds 4 contextual images without blocking publish (it runs after activation, is optional, and has a 120s timeout).
+- Em dashes in AI-generated content are unprofessional and can cause Etsy API validation issues. Enforcing at two layers (prompt instruction + sanitizer call) eliminates them before they reach buyers.
+
+**Key implementation details:**
+- `src/lib/utils/etsy-sanitizer.ts` — `sanitizeForEtsy()` replaces em dash (space), spaced hyphen (", "), double hyphen (space), word-hyphen-word (", "). Called on title, description, every tag in `etsy-publish-service.ts`, and on Pinterest pin title/description.
+- `src/lib/services/gallery-service.ts` — generates 4 DALL-E images at ranks 2-5 using `gpt-image-1` at "medium" quality. Each wrapped in 25s AbortController. Upload failures logged but never throw. Stage is optional in pipeline.
+- `prisma/schema.prisma` — added `LearningEntry` model (lessonType, content, niche, productId, revenue) and `salesCount Int @default(0)` on `MarketIntelligenceReport`.
+- `src/app/api/etsy/webhook/route.ts` — writes LearningEntry and increments salesCount on every sale. Always returns 200 to prevent Etsy retries.
+- `src/lib/agents/manager-agent.ts` — queries last 30 days of sale_validated LearningEntry records and injects into both Path A and Path B prompts.
+- `src/app/api/cron/weekly-report/route.ts` — replaced Twilio SMS with 6-section Resend HTML email: revenue, high-views/no-sales, conversions, learnings, queue stats, Claude strategy with 15s timeout and fallback.
+
+**Trade-offs:**
+- Gallery stage adds up to 120s to pipeline per product (4 × 25s DALL-E calls). This is acceptable since it runs after publish and cannot block the listing going live.
+- `sanitizeForEtsy` converts "self-care" to "self, care" — this changes tag text but eliminates all hyphens as required. Etsy multi-word tags work without hyphens.
+- Direct visual intel cover prompts require a `MarketIntelligenceReport` in the last 48h for the primary keyword. Cold-start products fall back to the Claude plan path.

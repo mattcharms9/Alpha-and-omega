@@ -4,19 +4,22 @@ import { generateOptimizedListing, scoreListingQuality } from "@/lib/ai/listing-
 import { generateProductPdf } from "@/lib/services/pdf-service";
 import { generateProductCoverImage, generateProductMockups } from "@/lib/services/image-service";
 import { publishProductToEtsy } from "@/lib/services/etsy-publish-service";
-import { autoPromoteProduct } from "@/lib/promotions/auto-promote";
+import { generateAndUploadGallery } from "@/lib/services/gallery-service";
+import { pinterest, getValidPinterestToken } from "@/lib/integrations/pinterest";
+import { sanitizeForEtsy } from "@/lib/utils/etsy-sanitizer";
 import type { Prisma } from "@prisma/client";
 import type { BuildStatus } from "./agent-types";
 
-const TOTAL_STAGES = 8;
+const TOTAL_STAGES = 9;
 
 const STAGE_ACTIVE_STATUS: Record<string, BuildStatus> = {
-  blueprint:    "blueprinting",
-  pdf:          "generating_pdf",
-  cover_image:  "generating_cover",
-  seo:          "optimizing_seo",
-  mockups:      "generating_mockups",
-  etsy_publish: "creating_listing",
+  blueprint:     "blueprinting",
+  pdf:           "generating_pdf",
+  cover_image:   "generating_cover",
+  seo:           "optimizing_seo",
+  mockups:       "generating_mockups",
+  etsy_publish:  "creating_listing",
+  gallery:       "generating_gallery",
 };
 
 const STAGE_FAILED_STATUS: Record<string, BuildStatus> = {
@@ -94,7 +97,7 @@ export async function runBuildPipeline(cardId: string): Promise<void> {
   const completed: string[] = [];
   const failedStages: Array<{ stage: string; reason: string }> = [];
 
-  // Shared state across stages (set in blueprint, used in seo)
+  // Shared state across stages
   let productId = "";
   let savedBlueprint: Awaited<ReturnType<typeof generateProductBlueprint>> | null = null;
 
@@ -140,7 +143,6 @@ export async function runBuildPipeline(cardId: string): Promise<void> {
         return { productId: product.id, blueprint };
       }
     );
-    // Required — if failed it threw. Safe to access result.
     if (!bpOutcome.success) throw new Error("unreachable");
     productId = bpOutcome.result.productId;
     savedBlueprint = bpOutcome.result.blueprint;
@@ -175,7 +177,6 @@ export async function runBuildPipeline(cardId: string): Promise<void> {
     const seoOutcome = await runStage<number>(
       cardId, "seo", true, 30_000,
       async () => {
-        // Use blueprint from Stage 1; guaranteed non-null since blueprint is required
         const bp = savedBlueprint!;
         let finalListing = await generateOptimizedListing(bp, [card.primaryKeyword]);
         const qualityScore = scoreListingQuality(finalListing);
@@ -238,13 +239,75 @@ export async function runBuildPipeline(cardId: string): Promise<void> {
     completed.push("publish");
     console.log(`[build-pipeline] ✓ published — ${etsyOutcome.result.listingUrl}`);
 
-    // ── Stage 7: Pinterest (optional, fire-and-forget) ─────────────────────
-    void runStage<void>(cardId, "pinterest", false, 30_000, () => autoPromoteProduct(productId))
-      .then((r) => {
-        if (r.success) completed.push("pinterest");
-        else failedStages.push({ stage: "pinterest", reason: r.error });
-      })
-      .catch(() => {});
+    // ── Stage 7: Gallery (optional, 120s) ──────────────────────────────────
+    const galleryOutcome = await runStage(
+      cardId, "gallery", false, 120_000,
+      async () => generateAndUploadGallery(
+        productId,
+        etsyOutcome.result.listingId,
+        etsyOutcome.result.token,
+        etsyOutcome.result.shopId
+      )
+    );
+    if (galleryOutcome.success) {
+      completed.push("gallery");
+      console.log(`[build-pipeline] ✓ gallery — ${galleryOutcome.result.uploaded}/${galleryOutcome.result.total} images`);
+    } else {
+      failedStages.push({ stage: "gallery", reason: galleryOutcome.error });
+    }
+
+    // ── Stage 8: Pinterest pin (optional, 30s) ─────────────────────────────
+    const pinterestOutcome = await runStage<void>(
+      cardId, "pinterest_pin", false, 30_000,
+      async () => {
+        const accessToken = await getValidPinterestToken();
+        const conn = await prisma.pinterestConnection.findFirst();
+        if (!conn) throw new Error("Pinterest not connected");
+
+        const product = await prisma.product.findUniqueOrThrow({
+          where: { id: productId },
+          select: { title: true, descriptionShort: true, coverImagePath: true, etsyListingUrl: true },
+        });
+
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL ?? "";
+        const imageUrl = product.coverImagePath ? `${baseUrl}${product.coverImagePath}` : "";
+        if (!imageUrl) throw new Error("No cover image available for Pinterest pin");
+
+        const listingUrl = product.etsyListingUrl ?? etsyOutcome.result.listingUrl;
+        const safeTitle = sanitizeForEtsy(product.title).slice(0, 100);
+        const safeDesc = sanitizeForEtsy(product.descriptionShort).slice(0, 500);
+
+        const pinResponse = await pinterest.createPin(
+          {
+            boardId: conn.boardId,
+            title: safeTitle,
+            description: safeDesc,
+            altText: safeTitle,
+            destinationUrl: listingUrl,
+            imageUrl,
+          },
+          accessToken
+        );
+
+        await prisma.pinterestPin.create({
+          data: {
+            productId,
+            pinId: pinResponse.id,
+            pinUrl: pinResponse.link,
+            boardId: conn.boardId,
+            title: safeTitle,
+            description: safeDesc,
+            destinationUrl: listingUrl,
+            imageUrl,
+          },
+        });
+      }
+    );
+    if (pinterestOutcome.success) {
+      completed.push("pinterest_pin");
+    } else {
+      failedStages.push({ stage: "pinterest_pin", reason: pinterestOutcome.error });
+    }
 
     // ── Finalize ────────────────────────────────────────────────────────────
     const completeness = Math.round((completed.length / TOTAL_STAGES) * 100);
@@ -261,7 +324,6 @@ export async function runBuildPipeline(cardId: string): Promise<void> {
     });
 
   } catch (err) {
-    // Required stage already set its failed_* status. Just save summary.
     const message = err instanceof Error ? err.message : "Build pipeline failed";
     console.error(`[build-pipeline] Fatal error:`, message);
     const completeness = Math.round((completed.length / TOTAL_STAGES) * 100);

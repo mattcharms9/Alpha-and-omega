@@ -137,6 +137,17 @@ export async function runManagerAgent(date: string): Promise<ManagerResult> {
 
   const isColdStart = reports.length === 0;
   const learningContext = await getLearningContext().catch(() => "No learning data available.");
+
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+  const saleValidations = await prisma.learningEntry.findMany({
+    where: { lessonType: "sale_validated", createdAt: { gte: thirtyDaysAgo } },
+    orderBy: { createdAt: "desc" },
+    take: 5,
+  }).catch(() => [] as Array<{ content: string }>);
+  const salesContext = saleValidations.length > 0
+    ? "VALIDATED SALES (last 30 days):\n" + saleValidations.map((e) => `- ${e.content}`).join("\n")
+    : "";
+
   let totalCost = 0;
   let cards: LaunchCardData[] = [];
   let managerNote = "Today's batch is ready for review.";
@@ -174,6 +185,7 @@ ${marketDataContext}
 
 SELLER LEARNING CONTEXT:
 ${learningContext}
+${salesContext ? `\n${salesContext}` : ""}
 
 Generate exactly 15 LaunchCard objects. Each card must use a real niche from the market data above for primaryKeyword. Use the actual etsyListingCount, etsyAvgPrice, and competitionLevel from the data.`;
 
@@ -209,7 +221,8 @@ Return ONLY a JSON array. Start with [ and end with ]. No markdown fences. No te
 Focus on: emotional wellness, self-improvement, seasonal events, party games, and productivity niches. Use realistic Etsy market data estimates.
 
 SELLER CONTEXT:
-${learningContext}`;
+${learningContext}
+${salesContext ? `\n${salesContext}` : ""}`;
 
     try {
       const rawCards = await callClaudeForCards(systemPrompt, userPrompt);
