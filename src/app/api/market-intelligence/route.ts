@@ -6,6 +6,7 @@ export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 import { toSafeErrorMessage } from "@/lib/errors";
 import { runFullScan, runNicheScan, getLatestSnapshot, getAllNicheReports } from "@/lib/market-intelligence/run-scan";
+import { TRACKED_NICHES } from "@/lib/market-intelligence/types";
 import { prisma } from "@/lib/db/prisma";
 
 const ScanNicheSchema = z.object({ niche: z.string().min(1).max(100) });
@@ -57,6 +58,23 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ success: true, data: snapshots });
     }
 
+    if (action === "scan-progress") {
+      const today = new Date().toISOString().slice(0, 10);
+      const [completedNiches, snapshot] = await Promise.all([
+        prisma.marketIntelligenceReport.count({ where: { reportDate: today } }),
+        prisma.etsyMarketSnapshot.findFirst({ where: { snapshotDate: today }, orderBy: { createdAt: "desc" } }),
+      ]);
+      return NextResponse.json({
+        success: true,
+        data: {
+          completedNiches,
+          totalNiches: TRACKED_NICHES.length,
+          isComplete: !!snapshot,
+          marketSummary: snapshot?.marketSummary ?? null,
+        },
+      });
+    }
+
     return NextResponse.json({ success: false, error: "Unknown action" }, { status: 400 });
   } catch (err) {
     return NextResponse.json({ success: false, error: toSafeErrorMessage(err) }, { status: 500 });
@@ -70,12 +88,12 @@ export async function POST(req: NextRequest) {
     const limit = rateLimit(req, { limit: 2, windowMs: 60_000 });
     if (!limit.success) return NextResponse.json({ success: false, error: "Rate limit exceeded — 2/min max on full scan" }, { status: 429 });
 
-    try {
-      const result = await runFullScan();
-      return NextResponse.json({ success: true, data: result });
-    } catch (err) {
-      return NextResponse.json({ success: false, error: toSafeErrorMessage(err) }, { status: 500 });
-    }
+    // Fire-and-forget: scan saves each niche to DB incrementally.
+    // Client polls GET ?action=scan-progress for live progress.
+    void runFullScan().catch((err) =>
+      console.error("[market-intelligence] Full scan failed:", err instanceof Error ? err.message : err)
+    );
+    return NextResponse.json({ success: true, data: { started: true, totalNiches: TRACKED_NICHES.length } });
   }
 
   if (action === "run-niche") {

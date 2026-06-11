@@ -266,6 +266,25 @@ export const dynamic = "force-dynamic";
 
 ---
 
+## RI-020: Vercel Read-Only Filesystem Breaks File Generation
+
+**First seen:** Session 031 (2026-06-11)
+**Occurrences:** 1 — build pipeline stalled at "Mockups generated" in production
+
+**Pattern:** Code that writes generated files (PDFs, images) to `path.join(process.cwd(), "public", ...)` works locally but throws `EROFS: read-only file system` on Vercel. `process.cwd()` = `/var/task/` in the Vercel runtime — the deployment artifact root, which is read-only. Stages that needed these files downstream (Etsy upload) silently failed because the files were never created.
+
+**Why it cascaded:** `generateProductMockups` used `Promise.allSettled` — it never rejected even when all writes failed. The pipeline marked stage 5 ("mockups") as complete despite writing nothing. Stages 2 and 3 DID fail (with logged errors), but since they were non-fatal, the pipeline continued. Stage 6 (Etsy) was then silently skipped because `pdfPath` and `coverImagePath` were null.
+
+**Fix:** Write all generated files to `/tmp/{subdir}/{filename}` as the primary path. Also attempt `public/` write non-fatally for local dev serving. Read from `/tmp/` in any downstream consumer (e.g., Etsy upload). Use `basename()` to extract the filename before `.catch()` callbacks to preserve TypeScript narrowing.
+
+**Prevention:** Any function that writes a generated file must:
+1. Use `/tmp/` as the primary write target
+2. Attempt `public/` non-fatally (`await fs.writeFile(publicPath, buf).catch(() => {})`) for local dev
+3. Any consumer that reads the file must try `/tmp/` first, fall back to `public/`
+4. `Promise.allSettled` results should be checked — if all fail, throw so callers can mark the stage as failed
+
+---
+
 ## Prevention Checklist
 
 Before submitting code for review, verify:
@@ -284,3 +303,5 @@ Before submitting code for review, verify:
 - [ ] Any route calling AI, running a pipeline, or doing multi-step scans has `export const maxDuration = 300` + `export const dynamic = "force-dynamic"`
 - [ ] External API callers log errors explicitly — never `.catch(() => [])` alone; always `.catch((err) => { console.error(...); return []; })`
 - [ ] Functions that persist external API data validate quality before saving (don't persist empty/zero results)
+- [ ] File generation functions write to `/tmp/` first, then non-fatally to `public/`; downstream readers try `/tmp/` first
+- [ ] `Promise.allSettled` result arrays: check if ALL failed — throw if so, rather than resolving vacuously with empty results

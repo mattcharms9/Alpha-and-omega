@@ -31,20 +31,25 @@ export async function generateProductCoverImage(productId: string): Promise<{ pa
 
   const buffer = Buffer.from(b64, "base64");
   const filename = `${productId}-primary.png`;
-  const savePath = path.join(process.cwd(), "public", "product-images", filename);
-  await fs.mkdir(path.dirname(savePath), { recursive: true });
-  await fs.writeFile(savePath, buffer);
 
-  // Resize to Etsy minimum (2000px) if needed
-  const resized = await resizeForEtsy(savePath).catch(() => null);
-  const finalPath = resized?.wasResized
-    ? `/product-images/${path.basename(resized.path)}`
-    : `/product-images/${filename}`;
+  // Write to /tmp/ first (writable on Vercel). Also try public/ for local dev serving.
+  const tmpSavePath = path.join("/tmp", "product-images", filename);
+  await fs.mkdir(path.dirname(tmpSavePath), { recursive: true });
+  await fs.writeFile(tmpSavePath, buffer);
+
+  const publicSavePath = path.join(process.cwd(), "public", "product-images", filename);
+  await fs.mkdir(path.dirname(publicSavePath), { recursive: true });
+  await fs.writeFile(publicSavePath, buffer).catch(() => {});
+
+  // Resize to Etsy minimum (2000px) if needed — resize the /tmp copy
+  const resized = await resizeForEtsy(tmpSavePath).catch(() => null);
+  const finalFilename = resized?.wasResized ? path.basename(resized.path) : filename;
+  const finalPath = `/product-images/${finalFilename}`;
 
   if (resized?.wasResized) {
     console.log(`[image-service] Cover upscaled to ${resized.width}×${resized.height} for Etsy`);
-    // Remove original undersized file
-    await fs.unlink(savePath).catch(() => {});
+    // Also write resized to public/ for local serving
+    await fs.copyFile(resized.path, path.join(process.cwd(), "public", "product-images", finalFilename)).catch(() => {});
   }
 
   await prisma.product.update({ where: { id: productId }, data: { coverImagePath: finalPath } });
@@ -64,29 +69,43 @@ export async function generateProductMockups(productId: string): Promise<{ paths
   const OpenAI = (await import("openai")).default;
   const openai = new OpenAI({ apiKey: openaiKey });
 
+  const DALLE_TIMEOUT_MS = 30_000;
+
   const results = await Promise.allSettled(
     concepts.map(async (concept, i) => {
-      const image = await openai.images.generate({
-        model: "gpt-image-1",
-        prompt: concept.dallePrompt,
-        n: 1,
-        size: "1024x1024",
-        quality: "standard",
-      });
-      const b64 = image.data?.[0]?.b64_json;
-      if (!b64) throw new Error("No mockup image data");
-      const buffer = Buffer.from(b64, "base64");
-      const filename = `${productId}-mockup-${i}.png`;
-      const savePath = path.join(process.cwd(), "public", "product-mockups", filename);
-      await fs.mkdir(path.dirname(savePath), { recursive: true });
-      await fs.writeFile(savePath, buffer);
-      return `/product-mockups/${filename}`;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), DALLE_TIMEOUT_MS);
+      try {
+        const image = await openai.images.generate(
+          { model: "gpt-image-1", prompt: concept.dallePrompt, n: 1, size: "1024x1024", quality: "standard" },
+          { signal: controller.signal }
+        );
+        const b64 = image.data?.[0]?.b64_json;
+        if (!b64) throw new Error("No mockup image data");
+        const buffer = Buffer.from(b64, "base64");
+        const filename = `${productId}-mockup-${i}.png`;
+
+        // Write to /tmp/ first (writable on Vercel). Also try public/ for local dev serving.
+        const tmpSavePath = path.join("/tmp", "product-mockups", filename);
+        await fs.mkdir(path.dirname(tmpSavePath), { recursive: true });
+        await fs.writeFile(tmpSavePath, buffer);
+        await fs.writeFile(path.join(process.cwd(), "public", "product-mockups", filename), buffer).catch(() => {});
+
+        return `/product-mockups/${filename}`;
+      } finally {
+        clearTimeout(timer);
+      }
     })
   );
 
   const paths = results
     .filter((r) => r.status === "fulfilled")
     .map((r) => (r as PromiseFulfilledResult<string>).value);
+
+  if (paths.length === 0 && concepts.length > 0) {
+    const firstError = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+    throw new Error(firstError?.reason instanceof Error ? firstError.reason.message : "All mockup generation attempts failed");
+  }
 
   await prisma.product.update({
     where: { id: productId },

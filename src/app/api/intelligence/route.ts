@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { discoverEmotionalTrends, scoreNiche } from "@/lib/ai/intelligence-engine";
+
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
 import { generateSeasonalCalendar } from "@/lib/ai/seasonal-engine";
 import { generateQuickIdeas } from "@/lib/ai/quick-ideas-engine";
 import { toSafeErrorMessage } from "@/lib/errors";

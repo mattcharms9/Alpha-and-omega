@@ -29,12 +29,18 @@ export async function generateProductPdf(productId: string): Promise<{ pdfPath: 
   const pdfBuffer = await pdf(element).toBuffer();
 
   const fileName = `${slugify(product.title)}-${product.id.slice(-6)}.pdf`;
-  const outputPath = path.join(process.cwd(), "public", "product-pdfs", fileName);
-  await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await fs.writeFile(outputPath, pdfBuffer);
 
-  const publicPath = `/product-pdfs/${fileName}`;
-  await prisma.product.update({ where: { id: productId }, data: { pdfPath: publicPath } });
+  // Write to /tmp/ first (writable on Vercel). Also try public/ for local dev serving.
+  const tmpPath = path.join("/tmp", "product-pdfs", fileName);
+  await fs.mkdir(path.dirname(tmpPath), { recursive: true });
+  await fs.writeFile(tmpPath, pdfBuffer);
 
-  return { pdfPath: publicPath, fileName };
+  const publicPath = path.join(process.cwd(), "public", "product-pdfs", fileName);
+  await fs.mkdir(path.dirname(publicPath), { recursive: true });
+  await fs.writeFile(publicPath, pdfBuffer).catch(() => {});
+
+  const pdfPath = `/product-pdfs/${fileName}`;
+  await prisma.product.update({ where: { id: productId }, data: { pdfPath } });
+
+  return { pdfPath, fileName };
 }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { apiFetch } from "@/lib/api";
 import { RefreshCw, TrendingUp, Clock, DollarSign } from "lucide-react";
 
 interface AgentLog {
@@ -79,7 +80,7 @@ export default function AgentMonitorPage() {
   useEffect(() => {
     async function load() {
       try {
-        const res = await fetch("/api/launch-queue?action=agent-runs&limit=10");
+        const res = await apiFetch("/api/launch-queue?action=agent-runs&limit=10");
         const json = await res.json() as { success: boolean; data: GroupedRun[] };
         if (json.success) setRuns(json.data);
       } catch { /* ignore */ } finally {

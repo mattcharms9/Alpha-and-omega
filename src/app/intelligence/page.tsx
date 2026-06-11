@@ -760,6 +760,7 @@ export default function IntelligencePage() {
           count,
           performanceContext: performanceContext ?? undefined,
         }),
+        timeoutMs: 120_000,
       });
       const data = await res.json() as { success: boolean; data?: EmotionalIntelligenceReport; error?: string };
       if (!data.success) throw new Error(data.error);

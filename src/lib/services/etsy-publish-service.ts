@@ -7,7 +7,7 @@ import {
   getValidEtsyToken,
 } from "@/lib/integrations/etsy";
 import { readFile } from "fs/promises";
-import { join } from "path";
+import { join, basename } from "path";
 import type { Prisma } from "@prisma/client";
 import type { OptimizedListing } from "@/lib/ai/listing-seo-engine";
 
@@ -41,10 +41,16 @@ export async function publishProductToEtsy(productId: string): Promise<EtsyPubli
 
   const listingId = String(listing.listing_id);
 
-  const pdfBuffer = await readFile(join(process.cwd(), "public", product.pdfPath.replace(/^\//, "")));
+  // Try /tmp/ first (Vercel runtime), fall back to public/ (local dev).
+  // pdfFilename / imgFilename are extracted before the catch to preserve TS narrowing.
+  const pdfFilename = basename(product.pdfPath);
+  const pdfBuffer = await readFile(join("/tmp", "product-pdfs", pdfFilename))
+    .catch(() => readFile(join(process.cwd(), "public", "product-pdfs", pdfFilename)));
   await uploadListingFile(token, shopId, listingId, Buffer.from(pdfBuffer), `${product.title}.pdf`);
 
-  const imgBuffer = await readFile(join(process.cwd(), "public", product.coverImagePath!.replace(/^\//, "")));
+  const imgFilename = basename(product.coverImagePath!);
+  const imgBuffer = await readFile(join("/tmp", "product-images", imgFilename))
+    .catch(() => readFile(join(process.cwd(), "public", "product-images", imgFilename)));
   await uploadListingImage(token, shopId, listingId, Buffer.from(imgBuffer), "cover.png");
 
   await activateListing(token, shopId, listingId);

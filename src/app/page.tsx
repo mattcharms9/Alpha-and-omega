@@ -480,7 +480,7 @@ export default function CommandCenterPage() {
 
   useEffect(() => {
     // Load intelligence score
-    fetch("/api/learning?action=score")
+    apiFetch("/api/learning?action=score")
       .then((r) => r.json() as Promise<{ success: boolean; data?: typeof intelligenceScore }>)
       .then((d) => { if (d.success && d.data) setIntelligenceScore(d.data); })
       .catch(() => {});

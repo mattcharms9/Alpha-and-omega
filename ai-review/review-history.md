@@ -4,6 +4,60 @@ Chronological log of all review sessions with findings and resolutions.
 
 ---
 
+## Session 031 — Full System Audit: Scan Market, Market Intelligence, Build Pipeline
+**Date:** 2026-06-11
+**Focus:** Three broken features: (1) Scan Market spins forever, (2) Market Intelligence spins forever, (3) Build pipeline stalls at "Mockups generated" — never reaches Etsy. Plus systemic raw `fetch()` calls blocked by proxy.
+**Files Changed:** 9 files (agent-monitor/page.tsx, page.tsx, signals/route.ts, intelligence/route.ts, market-intelligence/route.ts, market-intelligence/page.tsx, pdf-service.ts, image-service.ts, etsy-publish-service.ts, intelligence/page.tsx)
+**Build Status:** ✅ Passing — 0 TypeScript errors, 0 build errors
+
+### Root Causes and Fixes
+
+**1. Raw fetch() calls getting 401 from proxy (HIGH):**
+- `src/app/agent-monitor/page.tsx:82` — `fetch("/api/launch-queue?action=agent-runs&limit=10")` → 401 → agent monitor always showed empty run history
+- `src/app/page.tsx:483` — `fetch("/api/learning?action=score")` → 401 → dashboard learning score never loaded
+*Fix:* Both replaced with `apiFetch()`. Added `import { apiFetch } from "@/lib/api"` to agent-monitor page.
+
+**2. `signals/route.ts` had no `maxDuration` (CRITICAL — Scan Market broken):**
+Route calls `discoverEmotionalTrends()` (Claude AI, 20-60s). No `export const maxDuration`, not in vercel.json. Vercel Hobby default = 10s → killed before Claude responds → 504 every time.
+*Fix:* Added `export const maxDuration = 300; export const dynamic = "force-dynamic"` to signals/route.ts.
+
+**3. `intelligence/route.ts` had no code-level `maxDuration` (HIGH):**
+Only had vercel.json 60s. Route calls multiple AI functions. Code-level export is authoritative override in Next.js App Router.
+*Fix:* Added `export const maxDuration = 300; export const dynamic = "force-dynamic"`.
+
+**4. Market Intelligence spins forever — client timeout fires before scan completes (CRITICAL):**
+`market-intelligence/page.tsx` called `apiFetch(..., { method: "POST" })` with no `timeoutMs` override — uses 60s default. The full scan takes 3-5 minutes. After 60s, apiFetch's AbortController fired → "✗ Scan failed — check connection". Server route has 300s maxDuration ✓ but the client gave up first. `runFullScan()` already saves each niche to DB incrementally via sequential `for` loop, making progress polling possible without schema changes.
+*Fix:* Implemented progress polling pattern:
+- POST `run-full-scan` now fires-and-forgets `runFullScan()`, returns `{ started: true, totalNiches: 25 }` immediately
+- New GET `?action=scan-progress` counts today's `marketIntelligenceReport` rows + checks for completed `etsyMarketSnapshot`
+- Client polls every 5s, shows live progress bar "Scanning N/25 niches..."
+- 10-minute client-side deadline before showing timeout error
+- Scan completes → `isComplete: true` → polling stops, data reloads, success message shown
+
+**5. Build pipeline stalls at "Mockups generated" — never reaches Etsy (CRITICAL):**
+Three chained bugs:
+
+*5a. Read-only filesystem on Vercel:* Both `pdf-service.ts` and `image-service.ts` wrote to `path.join(process.cwd(), "public", ...)` = `/var/task/public/` on Vercel — READ-ONLY. `fs.writeFile` threw `EROFS: read-only file system`. Stages 2 (pdf) and 3 (cover_image) always failed → `pdfPath` and `coverImagePath` stayed null.
+*Fix:* All file writes now go to `/tmp/{subdir}/{filename}` first (always writable). Also attempt `public/{subdir}` write non-fatally for local dev serving. The `/tmp/` path is the primary write path.
+
+*5b. Stage 5 (mockups) vacuous success:* `generateProductMockups` used `Promise.allSettled` internally — never rejects even when ALL DALL-E writes fail. Pipeline's `.then(() => markDone("mockups"))` ran regardless → "mockups" appeared in `stagesCompleted` even with empty paths → user saw "Mockups generated ✓" as the final stage.
+*Fix:* After `Promise.allSettled`, if `paths.length === 0 && concepts.length > 0`, throw with the first error message. Pipeline catch handler then marks stage 5 as failed correctly.
+
+*5c. No DALL-E timeout:* Each `openai.images.generate()` call had no AbortController — could hang indefinitely if OpenAI was slow.
+*Fix:* Each call now wrapped with `AbortController` + 30s `setTimeout`. Controller signal passed to OpenAI SDK request options.
+
+*5d. Etsy publish file read failure:* `etsy-publish-service.ts` read files from `process.cwd()/public/product-pdfs/` — files never existed at that path on Vercel (write failed). `readFile` threw → stage 6 always failed.
+*Fix:* Updated to try `/tmp/product-pdfs/{filename}` first, fall back to `public/product-pdfs/{filename}`. Same for cover image. Uses `basename()` to extract filename from `product.pdfPath` before the `.catch()` to preserve TypeScript narrowing.
+
+**6. Intelligence scan 60s client timeout (MEDIUM):**
+`intelligence/page.tsx` called `apiFetch("/api/intelligence", ...)` with no `timeoutMs` override. Scans of 8 trends may take 60-90s → client gets "Request timed out" before server responds.
+*Fix:* Passed `timeoutMs: 120_000` (2 minutes) to the scan call.
+
+### Architecture note
+File generation (PDF, cover image, mockups) now writes to `/tmp/` as primary path on all environments. The relative path (`/product-pdfs/...`) is still stored in DB for display purposes. Etsy upload reads from `/tmp/` within the same function invocation. Local dev serving of generated files at `/product-images/...` still works because the public/ write is attempted non-fatally. A CDN upload step (Vercel Blob / R2) is the production-grade future fix for permanent file serving (see TD-018 update).
+
+---
+
 ## Session 030 — Fix Market Intelligence Pipeline: Real Etsy Data
 **Date:** 2026-06-10
 **Focus:** All 12 launch cards showing 0 listings and 7/12 "AI Estimate" badges — market intelligence pipeline not feeding real Etsy data to agent scorer

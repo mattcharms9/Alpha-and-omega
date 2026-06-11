@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
+
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
 import { discoverEmotionalTrends } from "@/lib/ai/intelligence-engine";
 import { computeSignalFreshness, computeOpportunityScore, computeRarityScore } from "@/lib/ai/empire-engine";
 import { toSafeErrorMessage } from "@/lib/errors";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { TrendingUp, BarChart2, ChevronDown, ChevronUp, RefreshCw, Search, Tag, DollarSign, Zap, AlertCircle } from "lucide-react";
 import { apiFetch } from "@/lib/api";
@@ -202,6 +202,9 @@ export default function MarketIntelligencePage() {
   const [filterCompetition, setFilterCompetition] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [scanMessage, setScanMessage] = useState<string | null>(null);
+  const [scanProgress, setScanProgress] = useState<{ completed: number; total: number } | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollDeadlineRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -224,24 +227,68 @@ export default function MarketIntelligencePage() {
 
   useEffect(() => { void loadData(); }, [loadData]);
 
+  function stopPolling() {
+    if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
+    if (pollDeadlineRef.current) { clearTimeout(pollDeadlineRef.current); pollDeadlineRef.current = null; }
+  }
+
+  function startProgressPolling() {
+    // Stop any existing poll
+    stopPolling();
+
+    // Hard deadline: give up after 10 minutes
+    pollDeadlineRef.current = setTimeout(() => {
+      stopPolling();
+      setScanning(false);
+      setScanMessage("✗ Scan timed out — check Vercel logs");
+      setScanProgress(null);
+    }, 10 * 60 * 1000);
+
+    pollIntervalRef.current = setInterval(() => {
+      void (async () => {
+        try {
+          const res = await apiFetch("/api/market-intelligence?action=scan-progress");
+          const json = await res.json() as { success: boolean; data?: { completedNiches: number; totalNiches: number; isComplete: boolean; marketSummary: string | null } };
+          if (!json.success) return;
+          const { completedNiches, totalNiches, isComplete, marketSummary } = json.data!;
+          setScanProgress({ completed: completedNiches, total: totalNiches });
+          setScanMessage(`Scanning ${completedNiches}/${totalNiches} niches...`);
+          if (isComplete) {
+            stopPolling();
+            setScanning(false);
+            setScanProgress(null);
+            setScanMessage(`✓ Scan complete — ${totalNiches} niches analyzed${marketSummary ? ` · ${marketSummary}` : ""}`);
+            void loadData();
+          }
+        } catch {
+          // transient fetch error — keep polling
+        }
+      })();
+    }, 5000);
+  }
+
   const handleRunScan = async () => {
     setScanning(true);
-    setScanMessage("Running full market scan across 25 niches — this takes 3–5 minutes...");
+    setScanProgress(null);
+    setScanMessage("Starting scan...");
     try {
       const res = await apiFetch("/api/market-intelligence?action=run-full-scan", { method: "POST" });
-      const json = await res.json() as { success: boolean; data?: { nichesAnalyzed: number; totalListingsPulled: number }; error?: string };
-      if (json.success) {
-        setScanMessage(`✓ Scan complete — ${json.data?.nichesAnalyzed ?? 0} niches analyzed, ${(json.data?.totalListingsPulled ?? 0).toLocaleString()} listings pulled`);
-        await loadData();
-      } else {
+      const json = await res.json() as { success: boolean; data?: { started: boolean; totalNiches: number }; error?: string };
+      if (!json.success) {
         setScanMessage(`✗ Scan failed: ${json.error}`);
+        setScanning(false);
+        return;
       }
+      setScanMessage(`Scanning 0/${json.data?.totalNiches ?? 25} niches...`);
+      startProgressPolling();
     } catch {
       setScanMessage("✗ Scan failed — check connection");
-    } finally {
       setScanning(false);
     }
   };
+
+  // Clean up polling on unmount
+  useEffect(() => () => stopPolling(), []);
 
   const sorted = [...reports]
     .filter((r) => {
@@ -288,6 +335,14 @@ export default function MarketIntelligencePage() {
       {scanMessage && (
         <div style={{ marginBottom: 20, padding: "12px 16px", background: scanMessage.startsWith("✓") ? "var(--emerald)15" : scanMessage.startsWith("✗") ? "#ef444415" : "var(--gold)15", border: `1px solid ${scanMessage.startsWith("✓") ? "var(--emerald)" : scanMessage.startsWith("✗") ? "#ef4444" : "var(--gold)"}30`, borderRadius: 8, fontSize: 13, color: "var(--text-secondary)" }}>
           {scanMessage}
+          {scanProgress && (
+            <div style={{ marginTop: 8 }}>
+              <div style={{ height: 4, background: "var(--bg-void)", borderRadius: 2, overflow: "hidden" }}>
+                <div style={{ height: "100%", background: "var(--gold)", borderRadius: 2, width: `${Math.round((scanProgress.completed / scanProgress.total) * 100)}%`, transition: "width 0.4s ease" }} />
+              </div>
+              <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{scanProgress.completed} of {scanProgress.total} niches complete</div>
+            </div>
+          )}
         </div>
       )}
 
