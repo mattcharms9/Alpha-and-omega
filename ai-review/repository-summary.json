@@ -6,7 +6,7 @@
     "description": "Autonomous AI-native publishing and emotional utility platform",
     "status": "production",
     "lastReview": "2026-06-11",
-    "sessionsCompleted": 31,
+    "sessionsCompleted": 32,
     "devPort": 3090
   },
   "technology": {
@@ -33,8 +33,10 @@
     },
     "imageGeneration": {
       "provider": "OpenAI",
-      "model": "dall-e-3",
-      "sdk": "openai 6.x"
+      "model": "gpt-image-1",
+      "sdk": "openai 6.x",
+      "qualityValues": ["low", "medium", "high", "auto"],
+      "note": "gpt-image-1 quality values differ from dall-e-3 ('standard'/'hd' not valid)"
     },
     "email": {
       "provider": "Resend",
@@ -197,7 +199,10 @@
     { "name": "NicheResearch", "purpose": "Saved niche research library with scoring, audience profiles, Etsy intel", "issues": [] },
     { "name": "DailyStreak", "purpose": "Daily target hit/miss record for streak calculation", "uniqueConstraint": "date", "issues": [] },
     { "name": "AccountabilitySettings", "purpose": "User reminder preferences — target, hour, timezone, SMS/push toggles", "id": "singleton", "issues": [] },
-    { "name": "PushSubscription", "purpose": "Browser web-push VAPID subscriptions", "uniqueConstraint": "endpoint", "issues": [] }
+    { "name": "PushSubscription", "purpose": "Browser web-push VAPID subscriptions", "uniqueConstraint": "endpoint", "issues": [] },
+    { "name": "Signal", "purpose": "Saved Etsy market signals with opportunity score; auto-saved at ≥90, manually saveable; unique per niche+reportDate", "uniqueConstraint": "niche+reportDate", "issues": [] },
+    { "name": "EtsyMarketSnapshot", "purpose": "Nightly Etsy market intelligence snapshot for all 25 niches; unique per snapshotDate", "uniqueConstraint": "snapshotDate", "issues": [] },
+    { "name": "MarketIntelligenceReport", "purpose": "Per-niche scan results: listings count, price data, competition, AI opportunity scores", "issues": [] }
   ],
   "codeQuality": {
     "typescriptStrict": true,
@@ -213,10 +218,10 @@
     "buildCommand": "npm run build",
     "devCommand": "npm run dev --port 3090",
     "buildStatus": "passing",
-    "pageCount": 45,
+    "pageCount": 72,
     "typescriptErrors": 0,
     "lastBuildDate": "2026-06-11",
-    "lastBuildSession": 31
+    "lastBuildSession": 32
   },
   "openGaps": {
     "critical": ["TD-018_pdf_api_route_pending"],

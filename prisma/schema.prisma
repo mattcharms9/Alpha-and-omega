@@ -865,7 +865,7 @@ model MarketIntelligenceReport {
 
 model EtsyMarketSnapshot {
   id                  String   @id @default(cuid())
-  snapshotDate        String
+  snapshotDate        String   @unique
   nichesAnalyzed      Int
   totalListingsPulled Int
   topOpportunities    Json
@@ -873,4 +873,23 @@ model EtsyMarketSnapshot {
   createdAt           DateTime @default(now())
 
   @@index([snapshotDate])
+}
+
+model Signal {
+  id              String   @id @default(cuid())
+  niche           String
+  reportDate      String
+  opportunityScore Int
+  competitionLevel String
+  totalListings   Int
+  sweetSpotPrice  Float?
+  topOpportunity  String
+  autoSaved       Boolean  @default(false)
+  sourceReportId  String?
+  savedAt         DateTime @default(now())
+
+  @@unique([niche, reportDate])
+  @@index([niche])
+  @@index([opportunityScore])
+  @@index([savedAt])
 }

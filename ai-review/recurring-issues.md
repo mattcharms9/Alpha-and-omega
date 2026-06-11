@@ -285,6 +285,19 @@ export const dynamic = "force-dynamic";
 
 ---
 
+## RI-021: gpt-image-1 Rejects "standard" Quality — Valid Values Are low/medium/high/auto
+
+**First seen:** Session 032 (2026-06-11) — E2E test, mockup stage
+**Occurrences:** 1
+
+**Pattern:** `openai.images.generate({ model: "gpt-image-1", quality: "standard" })` returns HTTP 400: `Invalid value: 'standard'. Supported values are: 'low', 'medium', 'high', and 'auto'`. The `"standard"` value is valid for `dall-e-3` and `dall-e-2`, but gpt-image-1 uses a different quality scale.
+
+**Fix:** Changed mockup generation in `image-service.ts` to `quality: "medium"`. Cover image generation already used `quality: "high"` — correct.
+
+**Prevention:** When switching image model from dall-e-3 to gpt-image-1, audit all `quality:` parameters. Valid values for gpt-image-1: `"low"`, `"medium"`, `"high"`, `"auto"`. `"standard"` and `"hd"` are dall-e-3/dall-e-2 only.
+
+---
+
 ## Prevention Checklist
 
 Before submitting code for review, verify:

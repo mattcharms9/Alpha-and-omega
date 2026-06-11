@@ -69,10 +69,11 @@ export async function publishProductToEtsy(productId: string): Promise<EtsyPubli
     },
   });
 
+  const listingUrl = `https://www.etsy.com/listing/${listingId}`;
   await prisma.product.update({
     where: { id: productId },
-    data: { status: "published_etsy", etsyListingId: listingId },
+    data: { status: "published_etsy", etsyListingId: listingId, etsyListingUrl: listingUrl },
   });
 
-  return { listingId, listingUrl: `https://www.etsy.com/listing/${listingId}` };
+  return { listingId, listingUrl };
 }

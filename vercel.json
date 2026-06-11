@@ -26,7 +26,8 @@
     "src/app/api/cron/close-day/route.ts":              { "maxDuration": 120 },
     "src/app/api/cron/record-learning/route.ts":        { "maxDuration": 120 },
     "src/app/api/cron/shop-health/route.ts":            { "maxDuration": 60 },
-    "src/app/api/cron/market-intelligence/route.ts":    { "maxDuration": 300 }
+    "src/app/api/cron/market-intelligence/route.ts":    { "maxDuration": 300 },
+    "src/app/api/scan-market/route.ts":                 { "maxDuration": 30 }
   },
   "crons": [
     { "path": "/api/cron/market-intelligence", "schedule": "0 1 * * *"   },

@@ -4,7 +4,26 @@ export type AgentStatus = "idle" | "running" | "complete" | "failed";
 export type CompetitionLevel = "low" | "medium" | "high" | "saturated";
 export type ConfidenceLevel = "high" | "medium" | "low";
 export type CardStatus = "pending" | "approved" | "skipped";
-export type BuildStatus = "queued" | "building" | "built" | "publishing" | "published" | "failed";
+export type BuildStatus =
+  | "queued"
+  | "blueprinting"
+  | "generating_pdf"
+  | "generating_cover"
+  | "optimizing_seo"
+  | "generating_mockups"
+  | "creating_listing"
+  | "publishing"
+  | "building"
+  | "built"
+  | "published"
+  | "failed"
+  | "failed_blueprinting"
+  | "failed_generating_pdf"
+  | "failed_generating_cover"
+  | "failed_optimizing_seo"
+  | "failed_generating_mockups"
+  | "failed_creating_listing"
+  | "failed_publishing";
 
 export interface CatalogSnapshot {
   totalProducts: number;

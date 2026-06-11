@@ -8,6 +8,31 @@ import type { MarketReport, MarketSnapshot, TopSellerListing, ProductOpportunity
 
 interface NicheCardProps {
   report: MarketReport;
+  saved?: boolean;
+  onSave?: (report: MarketReport) => void;
+}
+
+function tierColor(score: number): string {
+  if (score >= 90) return "var(--gold)";
+  if (score >= 75) return "var(--emerald)";
+  if (score >= 60) return "var(--blue)";
+  return "var(--text-muted)";
+}
+
+function tierLabel(score: number): string {
+  if (score >= 90) return "GOLD";
+  if (score >= 75) return "GREEN";
+  if (score >= 60) return "BLUE";
+  return "WEAK";
+}
+
+function TierBadge({ score }: { score: number }) {
+  const c = tierColor(score);
+  return (
+    <span style={{ color: c, fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", border: `1px solid ${c}40`, borderRadius: 4, padding: "1px 6px", background: `${c}12` }}>
+      {tierLabel(score)}
+    </span>
+  );
 }
 
 function CompetitionBadge({ level }: { level: string }) {
@@ -26,7 +51,7 @@ function CompetitionBadge({ level }: { level: string }) {
 }
 
 function ScoreBar({ score }: { score: number }) {
-  const color = score >= 70 ? "var(--emerald)" : score >= 45 ? "var(--gold)" : "var(--amber)";
+  const color = tierColor(score);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <div style={{ flex: 1, height: 6, background: "var(--border-subtle)", borderRadius: 3, overflow: "hidden" }}>
@@ -42,8 +67,9 @@ function ScoreBar({ score }: { score: number }) {
   );
 }
 
-function NicheCard({ report }: NicheCardProps) {
+function NicheCard({ report, saved = false, onSave }: NicheCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [saving, setSaving] = useState(false);
   const priceRange = report.winningPriceRange as WinningPriceRange | null;
   const titleStructures = (report.winningTitleStructures as string[]) ?? [];
   const tags = (report.winningTags as string[]) ?? [];
@@ -65,6 +91,7 @@ function NicheCard({ report }: NicheCardProps) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
             <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 15 }}>{report.niche}</span>
+            <TierBadge score={report.opportunityScore} />
             <CompetitionBadge level={report.competitionLevel} />
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, maxWidth: 400 }}>
@@ -82,7 +109,21 @@ function NicheCard({ report }: NicheCardProps) {
             </div>
           </div>
         </div>
-        <div style={{ color: "var(--text-muted)", marginLeft: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginLeft: 12 }}>
+          {onSave && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (saved || saving) return;
+                setSaving(true);
+                onSave(report);
+              }}
+              title={saved ? "Saved to Signal Bank" : "Save to Signal Bank"}
+              style={{ background: saved ? "var(--emerald)20" : "var(--bg-elevated)", border: `1px solid ${saved ? "var(--emerald)" : "var(--border-subtle)"}`, color: saved ? "var(--emerald)" : "var(--text-muted)", borderRadius: 6, padding: "4px 10px", fontSize: 11, fontWeight: 600, cursor: saved || saving ? "default" : "pointer", whiteSpace: "nowrap" }}
+            >
+              {saved ? "✓ Saved" : saving ? "Saving..." : "+ Save"}
+            </button>
+          )}
           {expanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
         </div>
       </button>
@@ -203,8 +244,8 @@ export default function MarketIntelligencePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [scanMessage, setScanMessage] = useState<string | null>(null);
   const [scanProgress, setScanProgress] = useState<{ completed: number; total: number } | null>(null);
-  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollDeadlineRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [savedNiches, setSavedNiches] = useState<Set<string>>(new Set());
+  const scanAbortRef = useRef<boolean>(false);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -227,68 +268,91 @@ export default function MarketIntelligencePage() {
 
   useEffect(() => { void loadData(); }, [loadData]);
 
-  function stopPolling() {
-    if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
-    if (pollDeadlineRef.current) { clearTimeout(pollDeadlineRef.current); pollDeadlineRef.current = null; }
-  }
-
-  function startProgressPolling() {
-    // Stop any existing poll
-    stopPolling();
-
-    // Hard deadline: give up after 10 minutes
-    pollDeadlineRef.current = setTimeout(() => {
-      stopPolling();
-      setScanning(false);
-      setScanMessage("✗ Scan timed out — check Vercel logs");
-      setScanProgress(null);
-    }, 10 * 60 * 1000);
-
-    pollIntervalRef.current = setInterval(() => {
-      void (async () => {
-        try {
-          const res = await apiFetch("/api/market-intelligence?action=scan-progress");
-          const json = await res.json() as { success: boolean; data?: { completedNiches: number; totalNiches: number; isComplete: boolean; marketSummary: string | null } };
-          if (!json.success) return;
-          const { completedNiches, totalNiches, isComplete, marketSummary } = json.data!;
-          setScanProgress({ completed: completedNiches, total: totalNiches });
-          setScanMessage(`Scanning ${completedNiches}/${totalNiches} niches...`);
-          if (isComplete) {
-            stopPolling();
-            setScanning(false);
-            setScanProgress(null);
-            setScanMessage(`✓ Scan complete — ${totalNiches} niches analyzed${marketSummary ? ` · ${marketSummary}` : ""}`);
-            void loadData();
-          }
-        } catch {
-          // transient fetch error — keep polling
+  // Load existing saved signals on mount
+  useEffect(() => {
+    apiFetch("/api/scan-market?action=saved-signals")
+      .then((r) => r.json() as Promise<{ success: boolean; data?: Array<{ niche: string; reportDate: string }> }>)
+      .then((d) => {
+        if (d.success && d.data) {
+          setSavedNiches(new Set(d.data.map((s) => `${s.niche}__${s.reportDate}`)));
         }
-      })();
-    }, 5000);
-  }
+      })
+      .catch(() => {});
+  }, []);
 
   const handleRunScan = async () => {
     setScanning(true);
     setScanProgress(null);
     setScanMessage("Starting scan...");
+    scanAbortRef.current = false;
+
     try {
-      const res = await apiFetch("/api/market-intelligence?action=run-full-scan", { method: "POST" });
-      const json = await res.json() as { success: boolean; data?: { started: boolean; totalNiches: number }; error?: string };
-      if (!json.success) {
-        setScanMessage(`✗ Scan failed: ${json.error}`);
-        setScanning(false);
-        return;
+      let nextStart = 0;
+      const TOTAL = 25;
+
+      while (!scanAbortRef.current) {
+        setScanProgress({ completed: nextStart, total: TOTAL });
+        setScanMessage(`Scanning ${nextStart}/${TOTAL} niches...`);
+
+        const res = await apiFetch("/api/market-intelligence?action=run-full-scan", {
+          method: "POST",
+          body: JSON.stringify({ startFrom: nextStart }),
+          timeoutMs: 150_000,
+        });
+        const json = await res.json() as { success: boolean; data?: { completed: number; total: number; nextStart: number; isComplete: boolean }; error?: string };
+
+        if (!json.success) {
+          setScanMessage(`✗ Chunk failed at niche ${nextStart}: ${json.error}`);
+          setScanning(false);
+          return;
+        }
+
+        const { completed, total, nextStart: ns, isComplete } = json.data!;
+        setScanProgress({ completed, total });
+        setScanMessage(`Scanning ${completed}/${total} niches...`);
+
+        if (isComplete) {
+          setScanning(false);
+          setScanProgress(null);
+          setScanMessage(`✓ Scan complete — ${total} niches analyzed`);
+          void loadData();
+          return;
+        }
+
+        nextStart = ns;
       }
-      setScanMessage(`Scanning 0/${json.data?.totalNiches ?? 25} niches...`);
-      startProgressPolling();
-    } catch {
-      setScanMessage("✗ Scan failed — check connection");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Unknown error";
+      setScanMessage(`✗ Scan failed — ${msg}`);
       setScanning(false);
     }
   };
 
-  // Clean up polling on unmount
-  useEffect(() => () => stopPolling(), []);
+  const handleSaveSignal = async (report: MarketReport) => {
+    try {
+      const res = await apiFetch("/api/scan-market?action=save-signal", {
+        method: "POST",
+        body: JSON.stringify({
+          niche: report.niche,
+          reportDate: report.reportDate,
+          opportunityScore: report.opportunityScore,
+          competitionLevel: report.competitionLevel,
+          totalListings: report.totalListings,
+          sweetSpotPrice: (report.winningPriceRange as { sweet?: number } | null)?.sweet ?? null,
+          topOpportunity: (report.productOpportunities as Array<{ title?: string; description?: string }> | null)?.[0]?.title ?? report.niche,
+        }),
+      });
+      const json = await res.json() as { success: boolean };
+      if (json.success) {
+        setSavedNiches((prev) => new Set([...prev, `${report.niche}__${report.reportDate}`]));
+      }
+    } catch {
+      // silently ignore — user can retry
+    }
+  };
+
+  // Abort scan on unmount
+  useEffect(() => () => { scanAbortRef.current = true; }, []);
 
   const sorted = [...reports]
     .filter((r) => {
@@ -443,7 +507,11 @@ export default function MarketIntelligencePage() {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {sorted.map((report, i) => (
             <motion.div key={report.id} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.03 }}>
-              <NicheCard report={report} />
+              <NicheCard
+                report={report}
+                saved={savedNiches.has(`${report.niche}__${report.reportDate}`)}
+                onSave={handleSaveSignal}
+              />
             </motion.div>
           ))}
         </div>

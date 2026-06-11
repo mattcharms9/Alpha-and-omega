@@ -1,5 +1,5 @@
 # Alpha & Omega — Operational Status
-**Last Updated:** 2026-06-11 (Session 031 — Full System Audit: Scan Market, Market Intelligence, Build Pipeline)
+**Last Updated:** 2026-06-11 (Session 032 — Full Platform Operationalization: Per-Stage Build Pipeline, Chunked Market Intel, Signal Model)
 
 ---
 
@@ -195,6 +195,13 @@
 | vercel.json Functions Config | ✅ Done | `maxDuration`: batch=120s, launch-queue=120s, run-agent-queue=300s; note: `*/30` cron requires Vercel Pro |
 | PostgreSQL Migration | ✅ Done | schema provider="postgresql"; @prisma/adapter-pg; DATABASE_URL must be postgresql:// for all environments |
 | DEPLOY-NOW.md | ✅ Done | 10-step deploy guide at project root; covers Neon, Vercel, Blob, env vars, platform redirects |
+| Build Pipeline Per-Stage Status | ✅ Live | 8 granular BuildStatus values (blueprinting→pdf→cover→seo→mockups→listing→publishing); per-stage failed variants; outer catch maps currentStage → failed_* |
+| Chunked Market Intelligence | ✅ Live | 5 niches/invocation (CHUNK_SIZE); 25s Promise.race per niche; 8s AbortController on Etsy fetches; 20s Claude timeout; 300ms delay between niches |
+| Signal Model + Auto-Save | ✅ Live | Signal model (@@unique niche+reportDate); auto-saved when opportunityScore ≥ 90 during scan; /api/scan-market save-signal/saved-signals routes |
+| Tier Badges on Market Intel | ✅ Live | TierBadge component: GOLD ≥90, GREEN ≥75, BLUE ≥60, WEAK <60 via CSS vars; ScoreBar uses tierColor(); NicheCard Save button |
+| Signals Page Market Intel Section | ✅ Live | Market Signals section shows saved Etsy market signals from /api/scan-market?action=saved-signals |
+| EtsyMarketSnapshot Upsert | ✅ Fixed | @unique added to snapshotDate; upsert replaces create — no duplicate-key errors on re-scan |
+| gpt-image-1 Quality Fix | ✅ Fixed | mockup quality "standard" → "medium"; valid values: low/medium/high/auto |
 | Git Staged | ✅ Ready | All files staged; .env and prisma/dev.db confirmed NOT tracked; ready to commit and push |
 
 ---

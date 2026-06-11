@@ -3,16 +3,31 @@ import type { TopSellerListing, RisingListing, PricePoint } from "./types";
 
 function buildPublicHeaders(): Record<string, string> {
   const key = process.env.ETSY_API_KEY;
-  // Accept either name — ETSY_SHARED_SECRET matches integrations/etsy.ts; ETSY_API_SECRET matches .env
   const secret = process.env.ETSY_SHARED_SECRET ?? process.env.ETSY_API_SECRET;
   if (!key) throw new Error("ETSY_API_KEY not set");
   if (!secret) throw new Error("Neither ETSY_SHARED_SECRET nor ETSY_API_SECRET is set");
-  // Etsy v3 requires "keystring:shared_secret" even for public/unauthenticated endpoints
   return { "x-api-key": `${key}:${secret}` };
 }
 
 async function delay(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+async function fetchWithTimeout(
+  url: string,
+  headers: Record<string, string>,
+  ms: number
+): Promise<Response | null> {
+  const controller = new AbortController();
+  const tid = setTimeout(() => controller.abort(), ms);
+  try {
+    return await fetch(url, { headers, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") return null;
+    throw err;
+  } finally {
+    clearTimeout(tid);
+  }
 }
 
 interface EtsyListingRaw {
@@ -54,13 +69,17 @@ async function etsySearch(
   const url = `${ETSY_BASE}/application/listings/active?${params}`;
   const headers = buildPublicHeaders();
 
-  let res = await fetch(url, { headers });
+  let res = await fetchWithTimeout(url, headers, 8000);
+  if (!res) {
+    console.warn(`[etsy-client] Timeout on query "${query}"`);
+    return [];
+  }
 
   if (res.status === 429) {
     await delay(2000);
-    res = await fetch(url, { headers });
-    if (res.status === 429) {
-      console.warn(`[etsy-client] Rate limited twice on query "${query}", skipping`);
+    res = await fetchWithTimeout(url, headers, 8000);
+    if (!res || res.status === 429) {
+      console.warn(`[etsy-client] Rate limited/timeout on query "${query}", skipping`);
       return [];
     }
   }
@@ -77,8 +96,8 @@ async function etsySearch(
 async function fetchListingDetails(listingId: number): Promise<EtsyListingRaw | null> {
   await delay(100);
   const url = `${ETSY_BASE}/application/listings/${listingId}?includes=images,shop`;
-  const res = await fetch(url, { headers: buildPublicHeaders() });
-  if (!res.ok) return null;
+  const res = await fetchWithTimeout(url, buildPublicHeaders(), 4000);
+  if (!res || !res.ok) return null;
   return (await res.json()) as EtsyListingRaw;
 }
 
@@ -98,18 +117,16 @@ export async function searchTopListings(
   const raw = await etsySearch(query, "score", Math.min(limit, 25));
   if (raw.length === 0) return [];
 
-  // Phase 2: fetch full details for the top 10 by favorers
+  // Fetch details for top 5 by favorers (reduced from 10 to stay within per-niche timeout)
   const sorted = [...raw].sort((a, b) => (b.num_favorers ?? 0) - (a.num_favorers ?? 0));
-  const toDetail = sorted.slice(0, 10);
+  const toDetail = sorted.slice(0, 5);
 
   const detailed: EtsyListingRaw[] = [];
   for (const listing of toDetail) {
-    await delay(100);
     const detail = await fetchListingDetails(listing.listing_id);
     detailed.push(detail ?? listing);
   }
 
-  // Merge detailed back with rest
   const detailMap = new Map(detailed.map((d) => [d.listing_id, d]));
   const merged = raw.map((r) => detailMap.get(r.listing_id) ?? r);
 
@@ -139,7 +156,6 @@ export async function searchRisingListings(
   query: string,
   limit = 15
 ): Promise<RisingListing[]> {
-  // Search recent listings (last 90 days) sorted by creation date
   const raw = await etsySearch(query, "created", 25);
   if (raw.length === 0) return [];
 
@@ -181,7 +197,7 @@ export async function getPriceDistribution(query: string): Promise<PricePoint[]>
   for (const l of raw) {
     if (!l.price) continue;
     const price = l.price.amount / l.price.divisor;
-    const bucket = Math.round(price / 2) * 2; // round to nearest $2
+    const bucket = Math.round(price / 2) * 2;
     const key = String(bucket);
     buckets[key] = (buckets[key] ?? 0) + 1;
   }
@@ -203,8 +219,8 @@ export async function getListingCount(query: string): Promise<number> {
     type: "digital",
   });
   const url = `${ETSY_BASE}/application/listings/active?${params}`;
-  const res = await fetch(url, { headers: buildPublicHeaders() });
-  if (!res.ok) return 0;
+  const res = await fetchWithTimeout(url, buildPublicHeaders(), 8000);
+  if (!res || !res.ok) return 0;
   const data = (await res.json()) as { count?: number };
   return data.count ?? 0;
 }

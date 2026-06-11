@@ -10,6 +10,16 @@ import type { BuildStatus } from "./agent-types";
 
 const TOTAL_STAGES = 8; // blueprint, pdf, cover_image, seo_optimize, mockups, etsy_draft, publish, pinterest
 
+const FAILED_STATUS: Record<string, BuildStatus> = {
+  blueprinting: "failed_blueprinting",
+  generating_pdf: "failed_generating_pdf",
+  generating_cover: "failed_generating_cover",
+  optimizing_seo: "failed_optimizing_seo",
+  generating_mockups: "failed_generating_mockups",
+  creating_listing: "failed_creating_listing",
+  publishing: "failed_publishing",
+};
+
 async function setBuildStatus(cardId: string, status: BuildStatus, note?: string) {
   await prisma.launchCard.update({
     where: { id: cardId },
@@ -22,7 +32,7 @@ export async function runBuildPipeline(cardId: string): Promise<void> {
 
   await prisma.launchCard.update({
     where: { id: cardId },
-    data: { buildStatus: "building", buildStartedAt: new Date() },
+    data: { buildStatus: "blueprinting", buildStartedAt: new Date() },
   });
 
   const completed: string[] = [];
@@ -30,6 +40,8 @@ export async function runBuildPipeline(cardId: string): Promise<void> {
 
   function markDone(stage: string) { completed.push(stage); }
   function markFailed(stage: string, reason: string) { failed.push({ stage, reason }); }
+
+  let currentStage: string = "blueprinting";
 
   try {
     // Stage 1: Blueprint (fatal — no product = nothing to build)
@@ -69,30 +81,36 @@ export async function runBuildPipeline(cardId: string): Promise<void> {
 
     await prisma.launchCard.update({ where: { id: cardId }, data: { productId: product.id } });
     markDone("blueprint");
+    console.log(`[build-pipeline] ✓ blueprint — ${product.title}`);
 
     // Stage 2: PDF (non-fatal)
+    currentStage = "generating_pdf";
+    await setBuildStatus(cardId, "generating_pdf");
     await generateProductPdf(product.id)
-      .then(() => markDone("pdf"))
+      .then(() => { markDone("pdf"); console.log(`[build-pipeline] ✓ pdf`); })
       .catch((err) => {
-        console.error("[build-pipeline] PDF failed (non-fatal):", err);
+        console.error("[build-pipeline] PDF failed (non-fatal):", err instanceof Error ? err.message : err);
         markFailed("pdf", err instanceof Error ? err.message : "PDF generation failed");
       });
 
     // Stage 3: Cover image (non-fatal)
+    currentStage = "generating_cover";
+    await setBuildStatus(cardId, "generating_cover");
     await generateProductCoverImage(product.id)
-      .then(() => markDone("cover_image"))
+      .then(() => { markDone("cover_image"); console.log(`[build-pipeline] ✓ cover_image`); })
       .catch((err) => {
-        console.error("[build-pipeline] Cover image failed (non-fatal):", err);
+        console.error("[build-pipeline] Cover image failed (non-fatal):", err instanceof Error ? err.message : err);
         markFailed("cover_image", err instanceof Error ? err.message : "Cover image failed");
       });
 
-    // Stage 4: SEO optimize — B5: enforce quality score >= 75
+    // Stage 4: SEO optimize (non-fatal)
+    currentStage = "optimizing_seo";
+    await setBuildStatus(cardId, "optimizing_seo");
     await generateOptimizedListing(blueprint, [card.primaryKeyword])
       .then(async (optimized) => {
         let finalListing = optimized;
         const qualityScore = scoreListingQuality(optimized);
         if (qualityScore < 75) {
-          // Regenerate once if quality is too low
           const retry = await generateOptimizedListing(blueprint, [card.primaryKeyword]).catch(() => optimized);
           const retryScore = scoreListingQuality(retry);
           if (retryScore > qualityScore) finalListing = retry;
@@ -106,27 +124,35 @@ export async function runBuildPipeline(cardId: string): Promise<void> {
           },
         });
         markDone("seo_optimize");
+        console.log(`[build-pipeline] ✓ seo_optimize — quality: ${finalScore}`);
       })
       .catch((err) => {
-        console.error("[build-pipeline] SEO optimize failed (non-fatal):", err);
+        console.error("[build-pipeline] SEO optimize failed (non-fatal):", err instanceof Error ? err.message : err);
         markFailed("seo_optimize", err instanceof Error ? err.message : "SEO failed");
       });
 
     // Stage 5: Mockups (non-fatal)
+    currentStage = "generating_mockups";
+    await setBuildStatus(cardId, "generating_mockups");
     await generateProductMockups(product.id)
-      .then(() => markDone("mockups"))
+      .then(() => { markDone("mockups"); console.log(`[build-pipeline] ✓ mockups`); })
       .catch((err) => {
-        console.error("[build-pipeline] Mockups failed (non-fatal):", err);
+        console.error("[build-pipeline] Mockups failed (non-fatal):", err instanceof Error ? err.message : err);
         markFailed("mockups", err instanceof Error ? err.message : "Mockups failed");
       });
 
     await setBuildStatus(cardId, "built");
+    currentStage = "built";
 
-    // Stage 6: Etsy publish (non-fatal — saved as "built" not "published")
+    // Stage 6-7: Etsy publish (non-fatal — card saved as "built" if Etsy fails)
     const refreshed = await prisma.product.findUnique({ where: { id: product.id } });
     if (refreshed?.pdfPath && refreshed.coverImagePath) {
+      currentStage = "creating_listing";
+      await setBuildStatus(cardId, "creating_listing");
       await publishProductToEtsy(product.id)
         .then(async (etsyResult) => {
+          currentStage = "publishing";
+          await setBuildStatus(cardId, "publishing");
           await prisma.launchCard.update({
             where: { id: cardId },
             data: {
@@ -137,26 +163,27 @@ export async function runBuildPipeline(cardId: string): Promise<void> {
           });
           markDone("etsy_draft");
           markDone("publish");
+          console.log(`[build-pipeline] ✓ published — ${etsyResult.listingUrl}`);
         })
         .catch((err) => {
-          console.error("[build-pipeline] Etsy publish failed:", err);
+          console.error("[build-pipeline] Etsy publish failed:", err instanceof Error ? err.message : err);
           markFailed("etsy_draft", err instanceof Error ? err.message : "Etsy publish failed");
           markFailed("publish", "Publish to Etsy failed — publish manually from Products page");
         });
     } else {
+      console.warn(`[build-pipeline] Skipping Etsy — pdfPath: ${refreshed?.pdfPath}, coverImagePath: ${refreshed?.coverImagePath}`);
       markFailed("etsy_draft", "PDF or cover image missing — publish manually from Products page");
       markFailed("publish", "Skipped — prerequisite assets missing");
     }
 
-    // Stage 7: Pinterest (non-fatal)
+    // Stage 8: Pinterest (fire-and-forget)
     void autoPromoteProduct(product.id)
       .then(() => markDone("pinterest"))
       .catch((err) => {
-        console.error("[build-pipeline] Pinterest failed (non-fatal):", err);
+        console.error("[build-pipeline] Pinterest failed (non-fatal):", err instanceof Error ? err.message : err);
         markFailed("pinterest", err instanceof Error ? err.message : "Pinterest pin failed");
       });
 
-    // Write final completeness
     const completeness = Math.round((completed.length / TOTAL_STAGES) * 100);
     const isPublished = completed.includes("publish");
 
@@ -174,15 +201,17 @@ export async function runBuildPipeline(cardId: string): Promise<void> {
 
   } catch (err) {
     const message = err instanceof Error ? err.message : "Build pipeline failed";
+    console.error(`[build-pipeline] Fatal error at stage "${currentStage}":`, message);
+    const failedStatus: BuildStatus = FAILED_STATUS[currentStage] ?? "failed";
     const completeness = Math.round((completed.length / TOTAL_STAGES) * 100);
     await prisma.launchCard.update({
       where: { id: cardId },
       data: {
-        buildStatus: "failed",
+        buildStatus: failedStatus,
         failureReason: message,
         buildCompleteness: completeness,
         stagesCompleted: completed as unknown as Prisma.InputJsonValue,
-        stagesFailed: [...failed, { stage: "fatal", reason: message }] as unknown as Prisma.InputJsonValue,
+        stagesFailed: [...failed, { stage: currentStage, reason: message }] as unknown as Prisma.InputJsonValue,
       },
     });
     throw err;

@@ -426,6 +426,26 @@ function EmptyState({ onGenerate }: { onGenerate: () => void }) {
   );
 }
 
+interface MarketSignal {
+  id: string;
+  niche: string;
+  reportDate: string;
+  opportunityScore: number;
+  competitionLevel: string;
+  totalListings: number;
+  sweetSpotPrice: number | null;
+  topOpportunity: string;
+  autoSaved: boolean;
+  savedAt: string;
+}
+
+function MarketSignalTierColor(score: number): string {
+  if (score >= 90) return "var(--gold)";
+  if (score >= 75) return "var(--emerald)";
+  if (score >= 60) return "var(--blue)";
+  return "var(--text-muted)";
+}
+
 export default function SignalsPage() {
   const [signals, setSignals] = useState<BankedSignal[]>([]);
   const [brands, setBrands] = useState<{ id: string; brandName: string }[]>([]);
@@ -437,6 +457,8 @@ export default function SignalsPage() {
   const [focusArea, setFocusArea] = useState("");
   const [scanCount, setScanCount] = useState(8);
   const [filterActivated, setFilterActivated] = useState<"all" | "active" | "decaying">("all");
+  const [marketSignals, setMarketSignals] = useState<MarketSignal[]>([]);
+  const [marketSignalsLoading, setMarketSignalsLoading] = useState(true);
 
   const loadSignals = useCallback(async () => {
     try {
@@ -456,6 +478,14 @@ export default function SignalsPage() {
   }, []);
 
   useEffect(() => { loadSignals(); }, [loadSignals]);
+
+  useEffect(() => {
+    apiFetch("/api/scan-market?action=saved-signals")
+      .then((r) => r.json() as Promise<{ success: boolean; data?: MarketSignal[] }>)
+      .then((d) => { if (d.success) setMarketSignals(d.data ?? []); })
+      .catch(() => {})
+      .finally(() => setMarketSignalsLoading(false));
+  }, []);
 
   async function runScan() {
     setLoading(true);
@@ -721,6 +751,47 @@ export default function SignalsPage() {
             )}
           </>
         ) : null}
+
+        {/* Market Signals from Etsy Intelligence */}
+        <div style={{ marginTop: 40, paddingTop: 32, borderTop: "1px solid var(--border-subtle)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
+            <BarChart2 size={16} style={{ color: "var(--gold)" }} />
+            <span style={{ fontSize: "1rem", fontWeight: 700, color: "var(--text-primary)" }}>Etsy Market Signals</span>
+            <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>— saved from Market Intelligence scans</span>
+          </div>
+
+          {marketSignalsLoading ? (
+            <div style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading...</div>
+          ) : marketSignals.length === 0 ? (
+            <div style={{ padding: "24px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
+              No market signals saved yet. Run a Market Intelligence scan and click &quot;Save&quot; on high-opportunity niches.
+            </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 12 }}>
+              {marketSignals.map((s) => {
+                const c = MarketSignalTierColor(s.opportunityScore);
+                return (
+                  <div key={s.id} style={{ background: "var(--bg-surface)", border: `1px solid ${c}30`, borderRadius: 10, padding: "14px 16px" }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
+                      <span style={{ fontWeight: 600, color: "var(--text-primary)", fontSize: 14 }}>{s.niche}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: c, background: `${c}15`, border: `1px solid ${c}30`, borderRadius: 4, padding: "1px 6px" }}>{s.opportunityScore}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: "var(--text-muted)", marginBottom: 6, lineHeight: 1.4 }}>{s.topOpportunity}</div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", fontSize: 11, color: "var(--text-muted)" }}>
+                      <span>{s.competitionLevel} competition</span>
+                      <span>·</span>
+                      <span>{s.totalListings.toLocaleString()} listings</span>
+                      {s.sweetSpotPrice && <><span>·</span><span style={{ color: "var(--emerald)" }}>${s.sweetSpotPrice} sweet spot</span></>}
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 10, color: "var(--text-muted)" }}>
+                      {s.autoSaved ? "⚡ Auto-saved" : "✓ Saved"} · {s.reportDate}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

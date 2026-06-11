@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ success: false, error: "Unknown action" }, { status: 400 });
   } catch (err) {
-    return NextResponse.json({ success: false, error: toSafeErrorMessage(err) }, { status: 500 });
+    return NextResponse.json({ success: false, error: toSafeErrorMessage(err).message }, { status: 500 });
   }
 }
 
@@ -85,15 +85,21 @@ export async function POST(req: NextRequest) {
   const action = req.nextUrl.searchParams.get("action") ?? "";
 
   if (action === "run-full-scan") {
-    const limit = rateLimit(req, { limit: 2, windowMs: 60_000 });
-    if (!limit.success) return NextResponse.json({ success: false, error: "Rate limit exceeded — 2/min max on full scan" }, { status: 429 });
+    const limit = rateLimit(req, { limit: 10, windowMs: 60_000 });
+    if (!limit.success) return NextResponse.json({ success: false, error: "Rate limit exceeded" }, { status: 429 });
 
-    // Fire-and-forget: scan saves each niche to DB incrementally.
-    // Client polls GET ?action=scan-progress for live progress.
-    void runFullScan().catch((err) =>
-      console.error("[market-intelligence] Full scan failed:", err instanceof Error ? err.message : err)
-    );
-    return NextResponse.json({ success: true, data: { started: true, totalNiches: TRACKED_NICHES.length } });
+    try {
+      let startFrom = 0;
+      const body = await req.text();
+      if (body) {
+        const parsed = JSON.parse(body) as { startFrom?: number };
+        startFrom = typeof parsed.startFrom === "number" ? Math.max(0, parsed.startFrom) : 0;
+      }
+      const result = await runFullScan(startFrom);
+      return NextResponse.json({ success: true, data: result });
+    } catch (err) {
+      return NextResponse.json({ success: false, error: toSafeErrorMessage(err).message }, { status: 500 });
+    }
   }
 
   if (action === "run-niche") {
@@ -107,7 +113,7 @@ export async function POST(req: NextRequest) {
       const { report } = await runNicheScan(niche, reportDate);
       return NextResponse.json({ success: true, data: report });
     } catch (err) {
-      return NextResponse.json({ success: false, error: toSafeErrorMessage(err) }, { status: 500 });
+      return NextResponse.json({ success: false, error: toSafeErrorMessage(err).message }, { status: 500 });
     }
   }
 

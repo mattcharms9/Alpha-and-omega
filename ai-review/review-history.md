@@ -4,6 +4,46 @@ Chronological log of all review sessions with findings and resolutions.
 
 ---
 
+## Session 032 — Full Platform Operationalization: Per-Stage Build Pipeline, Chunked Market Intel, Signal Model
+**Date:** 2026-06-11
+**Focus:** Publish one real product to Etsy and fix every remaining platform bug. Seven-part spec: diagnose, fix build pipeline, fix market intel, fix scan market, audit raw fetch, E2E test, docs+commit.
+**Files Changed:** 12 files (agent-types.ts, build-pipeline.ts, etsy-publish-service.ts, launch-queue/route.ts, launch-queue/page.tsx, etsy-client.ts, run-scan.ts, market-intelligence/route.ts, cron/market-intelligence/route.ts, market-intelligence/page.tsx, scan-market/route.ts [NEW], signals/page.tsx, image-service.ts, prisma/schema.prisma)
+**Build Status:** ✅ Passing — 0 TypeScript errors, 72 pages
+
+### Root Causes and Fixes
+
+**1. Build pipeline had no per-stage status tracking (CRITICAL):**
+`runBuildPipeline` only set "building" → "built"/"failed". No way to tell which stage was running or which failed. `currentStage` variable now tracks the active stage; `FAILED_STATUS` map converts it to the correct `failed_*` BuildStatus. 8 new granular statuses: blueprinting, generating_pdf, generating_cover, optimizing_seo, generating_mockups, creating_listing, publishing — each with a failed variant.
+
+**2. Launch Queue UI had no stage-by-stage progress display (HIGH):**
+`BuildProgress` component showed a generic bar. Now maps each `buildStatus` to a stage index (0–7) and displays the stage label. `isFailed()` helper covers both `"failed"` and `"failed_*"` variants. Polling filter updated. "View listing →" link appears when `etsyListingUrl` is set.
+
+**3. Market intel timed out — entire 25-niche scan in single Vercel invocation (CRITICAL):**
+`runFullScan()` processed all 25 niches sequentially — Vercel's 300s limit was too tight. New chunked architecture: `CHUNK_SIZE = 5`, each invocation processes exactly 5 niches and returns `ChunkResult { completed, total, nextStart, isComplete }`. Client chains POST requests until `isComplete: true`.
+
+**4. Per-niche Etsy fetch had no timeout (HIGH):**
+Individual Etsy API calls in `etsy-client.ts` had no AbortController — could hang indefinitely on transient slowness. New `fetchWithTimeout(url, headers, ms)` helper: 8s for searches, 4s for detail fetches. Each niche also bounded by `Promise.race(runNicheScan(), 25s)`.
+
+**5. Claude calls in run-scan had no timeout (HIGH):**
+`analyzeNicheMarket` and `analyzeVisualStyle` ran serially, each unbounded. Now run in parallel via `Promise.all` with `Promise.race` against 20s timeout each, inside `runNicheScan`.
+
+**6. Signal model didn't exist — no persistence for high-opportunity niches (HIGH):**
+New `Signal` model with `@@unique([niche, reportDate])`. Auto-saved when `opportunityScore ≥ 90` during scan via `prisma.signal.upsert`. Manual save via `/api/scan-market?action=save-signal`. Signals displayed in `/signals` page.
+
+**7. EtsyMarketSnapshot had no unique constraint — upsert failed (HIGH):**
+`prisma.etsyMarketSnapshot.upsert` requires `@@unique` or `@unique` on the where field. Added `@unique` to `snapshotDate`. `npx prisma db push --accept-data-loss` used because existing data had no duplicates.
+
+**8. gpt-image-1 quality parameter "standard" is invalid (MEDIUM):**
+`image-service.ts` mockup generation used `quality: "standard"` — OpenAI returned 400. Valid values for gpt-image-1 are `"low"`, `"medium"`, `"high"`, `"auto"`. Fixed to `"medium"`.
+
+**9. Market intelligence client gave up before scan finished (resolved in 031, refined here):**
+Cron route referenced `result.totalListingsPulled` which was removed from `ChunkResult` in the chunked rewrite. Fixed cron to accumulate `nichesAnalyzed` across chunks.
+
+### E2E Test Results
+Blueprint ✅ | PDF ✅ (written to /tmp/product-pdfs/) | Cover image ❌ (OpenAI billing hard limit reached — account issue, not code) | SEO ✅ quality: 76 | Mockups ❌ (billing limit; fixed quality bug in this session) | Etsy ❌ skipped (no cover image — correctly gated). Etsy publish not completed due to OpenAI billing limit.
+
+---
+
 ## Session 031 — Full System Audit: Scan Market, Market Intelligence, Build Pipeline
 **Date:** 2026-06-11
 **Focus:** Three broken features: (1) Scan Market spins forever, (2) Market Intelligence spins forever, (3) Build pipeline stalls at "Mockups generated" — never reaches Etsy. Plus systemic raw `fetch()` calls blocked by proxy.

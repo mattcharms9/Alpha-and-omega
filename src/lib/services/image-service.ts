@@ -77,7 +77,7 @@ export async function generateProductMockups(productId: string): Promise<{ paths
       const timer = setTimeout(() => controller.abort(), DALLE_TIMEOUT_MS);
       try {
         const image = await openai.images.generate(
-          { model: "gpt-image-1", prompt: concept.dallePrompt, n: 1, size: "1024x1024", quality: "standard" },
+          { model: "gpt-image-1", prompt: concept.dallePrompt, n: 1, size: "1024x1024", quality: "medium" },
           { signal: controller.signal }
         );
         const b64 = image.data?.[0]?.b64_json;

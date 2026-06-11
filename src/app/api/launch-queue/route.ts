@@ -95,7 +95,13 @@ export async function GET(req: NextRequest) {
         select: { id: true, buildStatus: true, buildStartedAt: true, buildCompletedAt: true, failureReason: true, etsyListingId: true, publishedAt: true, productId: true },
       });
       if (!card) return NextResponse.json({ success: false, error: "Card not found" }, { status: 404 });
-      return NextResponse.json({ success: true, data: card });
+      return NextResponse.json({
+        success: true,
+        data: {
+          ...card,
+          etsyListingUrl: card.etsyListingId ? `https://www.etsy.com/listing/${card.etsyListingId}` : null,
+        },
+      });
     }
 
     if (action === "agent-runs") {

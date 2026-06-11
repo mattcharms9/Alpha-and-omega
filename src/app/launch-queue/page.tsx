@@ -41,6 +41,7 @@ interface LaunchCard {
   buildStatus: string;
   failureReason: string | null;
   etsyListingId: string | null;
+  etsyListingUrl: string | null;
   publishedAt: string | null;
   buildCompleteness: number;
   stagesFailed: Array<{ stage: string; reason: string }> | null;
@@ -68,9 +69,31 @@ const STAGE_LABELS: Record<string, string> = {
   publish: "Published to Etsy",
 };
 
+function isFailed(buildStatus: string): boolean {
+  return buildStatus === "failed" || buildStatus.startsWith("failed_");
+}
+
 function stageIndex(buildStatus: string): number {
   const map: Record<string, number> = {
-    queued: -1, building: 0, built: 4, publishing: 5, published: 7, failed: -2,
+    queued: -1,
+    blueprinting: 0,
+    generating_pdf: 1,
+    generating_cover: 2,
+    optimizing_seo: 3,
+    generating_mockups: 4,
+    creating_listing: 5,
+    publishing: 6,
+    building: 0,
+    built: 4,
+    published: 7,
+    failed: -2,
+    failed_blueprinting: -2,
+    failed_generating_pdf: -2,
+    failed_generating_cover: -2,
+    failed_optimizing_seo: -2,
+    failed_generating_mockups: -2,
+    failed_creating_listing: -2,
+    failed_publishing: -2,
   };
   return map[buildStatus] ?? -1;
 }
@@ -134,12 +157,23 @@ function CompletenessIndicator({ card }: { card: LaunchCard }) {
 
 function BuildProgress({ card }: { card: LaunchCard }) {
   const idx = stageIndex(card.buildStatus);
-  const failed = card.buildStatus === "failed";
+  const failed = isFailed(card.buildStatus);
+  const published = card.buildStatus === "published";
 
   return (
     <div style={{ marginTop: 12, padding: "10px 12px", background: "var(--bg-subtle)", borderRadius: "var(--radius-md)", fontSize: "0.7rem" }}>
-      <div style={{ fontWeight: 600, color: "var(--text-secondary)", marginBottom: 8 }}>
-        {failed ? "⚠️ Build failed" : card.buildStatus === "published" ? "✅ Live on Etsy" : "⟳ Building..."}
+      <div style={{ fontWeight: 600, color: failed ? "var(--rose)" : published ? "var(--emerald)" : "var(--text-secondary)", marginBottom: 8, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        {failed ? "⚠️ Build failed" : published ? "✅ Live on Etsy" : "⟳ Building..."}
+        {published && (card.etsyListingUrl ?? (card.etsyListingId ? `https://www.etsy.com/listing/${card.etsyListingId}` : null)) && (
+          <a
+            href={card.etsyListingUrl ?? `https://www.etsy.com/listing/${card.etsyListingId}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ fontSize: "0.65rem", color: "var(--emerald)", textDecoration: "underline" }}
+          >
+            View listing →
+          </a>
+        )}
       </div>
       {BUILD_STAGES.map((stage, i) => {
         const done = !failed && i < idx;
@@ -178,7 +212,7 @@ function LaunchCardView({
   const decided = isApproved || isSkipped;
   const building = isApproved && card.buildStatus !== "queued";
   const published = card.buildStatus === "published";
-  const failed = card.buildStatus === "failed";
+  const failed = isFailed(card.buildStatus);
 
   // Determine left border: building → amber, approved (queued) → green, failed → rose
   const leftBorderColor = building
@@ -196,7 +230,7 @@ function LaunchCardView({
       animate={{ opacity: 1, y: 0 }}
       style={{
         background: "var(--bg-card, var(--bg-surface))",
-        border: `1px solid ${published ? "var(--emerald-border)" : failed ? "var(--rose-border)" : isSkipped ? "var(--border-light)" : "var(--border-medium)"}`,
+        border: `1px solid ${published ? "var(--emerald-border)" : isFailed(card.buildStatus) ? "var(--rose-border)" : isSkipped ? "var(--border-light)" : "var(--border-medium)"}`,
         borderLeft: `3px solid ${leftBorderColor}`,
         borderRadius: "var(--radius-lg)",
         padding: "1rem",
@@ -355,7 +389,7 @@ function SummaryBar({ cards }: { cards: LaunchCard[] }) {
 
 function StatsBar({ cards }: { cards: LaunchCard[] }) {
   const approved = cards.filter((c) => c.status === "approved").length;
-  const building = cards.filter((c) => c.status === "approved" && c.buildStatus === "building").length;
+  const building = cards.filter((c) => c.status === "approved" && stageIndex(c.buildStatus) >= 0 && c.buildStatus !== "built" && c.buildStatus !== "published").length;
   const published = cards.filter((c) => c.buildStatus === "published").length;
   const pending = cards.filter((c) => c.status === "pending").length;
 
@@ -460,7 +494,7 @@ export default function LaunchQueuePage() {
   useEffect(() => {
     if (!queue) return;
     const building = queue.cards.filter(
-      (c) => c.status === "approved" && c.buildStatus !== "published" && c.buildStatus !== "failed" && c.buildStatus !== "queued"
+      (c) => c.status === "approved" && c.buildStatus !== "published" && !isFailed(c.buildStatus) && c.buildStatus !== "queued"
     );
     if (building.length === 0) return;
 
