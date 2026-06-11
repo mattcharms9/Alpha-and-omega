@@ -50,9 +50,9 @@ export function getEtsyApiKey(): string {
  */
 export function buildEtsyHeaders(accessToken: string): Record<string, string> {
   const keystring = process.env.ETSY_API_KEY;
-  const sharedSecret = process.env.ETSY_SHARED_SECRET;
+  const sharedSecret = process.env.ETSY_SHARED_SECRET ?? process.env.ETSY_API_SECRET;
   if (!keystring) throw new Error("ETSY_API_KEY not set");
-  if (!sharedSecret) throw new Error("ETSY_SHARED_SECRET not set");
+  if (!sharedSecret) throw new Error("Neither ETSY_SHARED_SECRET nor ETSY_API_SECRET is set");
   return {
     "x-api-key": `${keystring}:${sharedSecret}`,
     Authorization: `Bearer ${accessToken}`,
@@ -104,6 +104,7 @@ export interface CreateListingParams {
   tags: string[];
   quantity: number;
   is_digital: boolean;
+  type: "download" | "physical" | "both";
   who_made: string;
   when_made: string;
   taxonomy_id?: number;
@@ -176,11 +177,12 @@ export async function uploadListingFile(
 ): Promise<EtsyFileResponse> {
   const formData = new FormData();
   formData.append("file", new Blob([new Uint8Array(fileBuffer)], { type: "application/pdf" }), filename);
+  formData.append("name", filename); // Etsy requires explicit name field
 
   const keystring = process.env.ETSY_API_KEY;
-  const sharedSecret = process.env.ETSY_SHARED_SECRET;
+  const sharedSecret = process.env.ETSY_SHARED_SECRET ?? process.env.ETSY_API_SECRET;
   if (!keystring) throw new Error("ETSY_API_KEY not set");
-  if (!sharedSecret) throw new Error("ETSY_SHARED_SECRET not set");
+  if (!sharedSecret) throw new Error("Neither ETSY_SHARED_SECRET nor ETSY_API_SECRET is set");
 
   const res = await fetch(
     `${ETSY_BASE}/application/shops/${shopId}/listings/${listingId}/files`,
@@ -213,9 +215,9 @@ export async function uploadListingImage(
   formData.append("image", new Blob([new Uint8Array(imageBuffer)], { type: mimeType }), filename);
 
   const keystring = process.env.ETSY_API_KEY;
-  const sharedSecret = process.env.ETSY_SHARED_SECRET;
+  const sharedSecret = process.env.ETSY_SHARED_SECRET ?? process.env.ETSY_API_SECRET;
   if (!keystring) throw new Error("ETSY_API_KEY not set");
-  if (!sharedSecret) throw new Error("ETSY_SHARED_SECRET not set");
+  if (!sharedSecret) throw new Error("Neither ETSY_SHARED_SECRET nor ETSY_API_SECRET is set");
 
   const res = await fetch(
     `${ETSY_BASE}/application/shops/${shopId}/listings/${listingId}/images`,

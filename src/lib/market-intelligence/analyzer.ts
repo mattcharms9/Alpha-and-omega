@@ -144,21 +144,19 @@ export async function saveMarketReport(
   });
 }
 
-export async function getLatestReportForNiche(niche: string, maxAgeDays = 1) {
-  const cutoff = new Date();
-  cutoff.setDate(cutoff.getDate() - maxAgeDays);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-
+export async function getLatestReportForNiche(niche: string, maxAgeDays = 2) {
+  const cutoff = new Date(Date.now() - maxAgeDays * 24 * 60 * 60 * 1000);
   return prisma.marketIntelligenceReport.findFirst({
-    where: { niche, reportDate: { gte: cutoffStr } },
+    where: { niche, createdAt: { gte: cutoff } },
     orderBy: { createdAt: "desc" },
   });
 }
 
-export async function getTopOpportunitiesByScore(limit = 5, reportDate?: string) {
-  const date = reportDate ?? new Date().toISOString().slice(0, 10);
+// reportDate param retained for API compatibility but ignored — always use 48h DateTime lookback
+export async function getTopOpportunitiesByScore(limit = 5, _reportDate?: string) {
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
   return prisma.marketIntelligenceReport.findMany({
-    where: { reportDate: date, totalListings: { gt: 0 } },
+    where: { createdAt: { gte: cutoff }, totalListings: { gt: 0 } },
     orderBy: { opportunityScore: "desc" },
     take: limit,
     select: {

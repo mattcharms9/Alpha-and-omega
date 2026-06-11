@@ -20,10 +20,10 @@ function tierColor(score: number): string {
 }
 
 function tierLabel(score: number): string {
-  if (score >= 90) return "GOLD";
-  if (score >= 75) return "GREEN";
-  if (score >= 60) return "BLUE";
-  return "WEAK";
+  if (score >= 90) return "Top Opportunity";
+  if (score >= 75) return "Strong";
+  if (score >= 60) return "Moderate";
+  return "Weak";
 }
 
 function TierBadge({ score }: { score: number }) {

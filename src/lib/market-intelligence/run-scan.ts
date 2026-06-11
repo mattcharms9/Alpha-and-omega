@@ -7,8 +7,8 @@ import { analyzeVisualStyle } from "./visual-analyzer";
 import { TRACKED_NICHES } from "./types";
 
 const CHUNK_SIZE = 5;
-const NICHE_TIMEOUT_MS = 25_000;
-const CLAUDE_TIMEOUT_MS = 20_000;
+const NICHE_TIMEOUT_MS = 45_000;
+const CLAUDE_TIMEOUT_MS = 40_000;
 
 const SUMMARY_PROMPT = `You are a market intelligence analyst. Summarize today's Etsy market findings in 2-3 sentences. Focus on actionable insights: which niches are hottest, any price shifts, and the single best opportunity right now.`;
 
@@ -166,10 +166,11 @@ export async function getLatestSnapshot() {
   });
 }
 
-export async function getAllNicheReports(reportDate?: string) {
-  const date = reportDate ?? new Date().toISOString().slice(0, 10);
+// reportDate param retained for API compatibility — always use 48h lookback for reliability
+export async function getAllNicheReports(_reportDate?: string) {
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
   return prisma.marketIntelligenceReport.findMany({
-    where: { reportDate: date },
+    where: { createdAt: { gte: cutoff } },
     orderBy: { opportunityScore: "desc" },
     select: {
       id: true,

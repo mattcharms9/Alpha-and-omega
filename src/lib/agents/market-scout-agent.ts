@@ -17,13 +17,11 @@ export async function runMarketScoutAgent(
 ): Promise<MarketOpportunity[]> {
   const start = Date.now();
 
-  // 1. Load last 24h market intelligence reports from DB
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const cutoffDate = yesterday.toISOString().slice(0, 10);
+  // 1. Load market intelligence reports from last 48h using DateTime field (never string date comparison)
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
   const liveReports = await prisma.marketIntelligenceReport.findMany({
-    where: { reportDate: { gte: cutoffDate } },
+    where: { createdAt: { gte: cutoff } },
     orderBy: { opportunityScore: "desc" },
     take: 25,
     select: {

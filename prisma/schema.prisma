@@ -356,7 +356,7 @@ model PerformanceMetric {
 }
 
 model BankedSignal {
-  id                     String    @id
+  id                     String    @id @default(cuid())
   emotion                String
   painPoint              String
   description            String

@@ -559,9 +559,17 @@ export default function LaunchQueuePage() {
 
   async function triggerRun() {
     setTriggering(true);
+    const pollStart = Date.now();
+    const POLL_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
 
     // Poll GET every 10 seconds — detect cards as soon as they arrive
     pollRef.current = setInterval(async () => {
+      if (Date.now() - pollStart > POLL_TIMEOUT_MS) {
+        if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+        setTriggering(false);
+        setToastMsg({ type: "error", text: "Agent run timed out — check Vercel logs and try again." });
+        return;
+      }
       try {
         const r = await apiFetch("/api/launch-queue?action=today", { credentials: "include" });
         const j = await r.json() as { success: boolean; data: DailyQueue | null };
@@ -731,11 +739,17 @@ export default function LaunchQueuePage() {
           </div>
         )}
 
-        {/* No queue yet */}
-        {!loading && !triggering && !queue && (
+        {/* No queue yet OR queue exists but has no cards — always show trigger button */}
+        {!loading && !triggering && cards.length === 0 && queue?.status !== "failed" && (
           <div style={{ textAlign: "center", padding: "4rem", color: "var(--text-muted)" }}>
-            <div style={{ fontSize: "var(--text-sm)", fontWeight: 500, marginBottom: 8 }}>No queue for today</div>
-            <div style={{ fontSize: "0.75rem", marginBottom: 20 }}>The agents run nightly at 2am UTC. You can trigger a manual run below.</div>
+            <div style={{ fontSize: "var(--text-sm)", fontWeight: 500, marginBottom: 8 }}>
+              {queue ? "No opportunities in today's queue" : "No queue for today"}
+            </div>
+            <div style={{ fontSize: "0.75rem", marginBottom: 20 }}>
+              {queue
+                ? "The last agent run produced no cards. Trigger a fresh run to generate opportunities from live Etsy data."
+                : "The agents run nightly at 2am UTC. You can trigger a manual run below."}
+            </div>
             <button
               onClick={() => void triggerRun()}
               style={{ display: "inline-flex", alignItems: "center", gap: 6, background: "var(--emerald)", color: "white", border: "none", borderRadius: "var(--radius-md)", padding: "0.5rem 1.25rem", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" }}

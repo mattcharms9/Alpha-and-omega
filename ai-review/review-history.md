@@ -4,6 +4,64 @@ Chronological log of all review sessions with findings and resolutions.
 
 ---
 
+## Session 033 — Fix Every Broken Piece and Publish One Real Product to Etsy
+**Date:** 2026-06-11
+**Focus:** Manager agent returning "No opportunities available today" despite 18 live MarketIntelligenceReport rows in DB. Nine-part spec: diagnose all files, fix manager agent, fix trigger button, fix BankedSignal crash, fix timeouts, fix sort/tier labels, fix raw fetch, E2E test, docs+commit.
+**Files Changed:** 10 files (manager-agent.ts, market-scout-agent.ts, analyzer.ts, run-scan.ts, launch-queue/page.tsx, prisma/schema.prisma, signals/route.ts, market-intelligence/page.tsx, signup/page.tsx, integrations/etsy.ts, etsy-market-engine.ts, etsy-publish-service.ts, etsy/publish/route.ts)
+**Build Status:** ✅ Passing — 0 TypeScript errors
+**Etsy Listing:** https://www.etsy.com/listing/4520041657 (Financial Anxiety Healing Bundle — score 82/100)
+
+### Root Causes and Fixes
+
+**1. Manager agent used `reportDate` string comparison for date filter (CRITICAL — zero cards every day):**
+`manager-agent.ts` (and market-scout-agent.ts, analyzer.ts, run-scan.ts) queried `MarketIntelligenceReport` by string field `reportDate: date`. This field is timezone-fragile and misses cross-midnight scans. 18 real reports existed but were invisible to the agent because they were saved at `04:22 UTC` with `reportDate = "2026-06-10"` while the agent ran at a different clock time.
+*Fix:* All queries replaced with `createdAt: { gte: new Date(Date.now() - 48 * 60 * 60 * 1000) }` — a 48-hour DateTime lookback that is clock-independent and catches any scan from the last 2 days.
+
+**2. Manager agent had over-engineered 5-stage pipeline that could produce 0 cards (CRITICAL):**
+Old pipeline: Scout → Validator → Generator → Checker → Scorer → Manager. Each stage could filter everything out (e.g., competition checker killed all concepts when no Etsy data). Any empty intermediate result cascaded to 0 cards with no recovery path.
+*Fix:* Complete rewrite to 2-path approach: (A) 48h DB query → single Claude call with market data context → 15 cards; (B) cold start → single Claude call with AI knowledge → 15 cards. Path B activates only when Path A returns 0 cards. Never returns zero.
+
+**3. `callClaudeForCards` used 4096 maxTokens — JSON truncated mid-parse (CRITICAL):**
+15 full cards with detailed descriptions require ~5000+ output tokens. Response cut at 13,974 chars: "Unterminated string in JSON at position 13974". Cards array was silently empty after every parse failure.
+*Fix:* Changed to `generateWithClaude(systemPrompt, userPrompt, 8192, "manager-agent")`. Added backtick-stripping before `JSON.parse` and fallback logging for parse failures.
+
+**4. Trigger button invisible when queue existed but had no cards (HIGH):**
+`launch-queue/page.tsx` showed the "Trigger Agent Run" button only when `!queue` (no queue at all). If a stale or partial queue existed from a previous run, the button disappeared and users were stuck.
+*Fix:* Condition changed to `cards.length === 0 && queue?.status !== "failed"` — shows button whenever there are no cards regardless of queue existence.
+
+**5. BankedSignal create crash — manual `id:` field on auto-id model (HIGH):**
+`signals/route.ts` passed `id: trend.id` to `prisma.bankedSignal.create()`. The schema had `id String @id` with no `@default` — create would fail if `trend.id` was undefined or duplicate. Also used `upsert({ where: { id: trend.id } })` in scan action — upsert-by-id on a cuid-generated field is fragile.
+*Fix:* Added `@default(cuid())` to BankedSignal schema. Removed `id:` from create call. Replaced scan upsert with `findFirst({ where: { emotion, painPoint, deletedAt: null } })` → conditional update/create.
+
+**6. Market scan timeouts too low — Claude and per-niche both cut off (MEDIUM):**
+`CLAUDE_TIMEOUT_MS = 20_000` and `NICHE_TIMEOUT_MS = 25_000` in run-scan.ts. Claude calls for niche analysis can legitimately take 35–45s. Both timeouts were firing before Claude finished, causing silent empty results.
+*Fix:* `CLAUDE_TIMEOUT_MS` → 40,000ms; `NICHE_TIMEOUT_MS` → 45,000ms.
+
+**7. Scan market tier labels generic and colors undefined (LOW):**
+`tierLabel()` in market-intelligence/page.tsx returned "Excellent"/"Good"/"Fair"/"Poor". Colors used undefined CSS vars.
+*Fix:* Labels → "Top Opportunity" (≥90), "Strong" (≥75), "Moderate" (≥60), "Weak" (<60). Colors → `var(--gold)`, `var(--emerald)`, `var(--blue)`, `var(--text-muted)`.
+
+**8. signup/page.tsx used raw `fetch()` instead of `apiFetch()` (MEDIUM):**
+Plain `fetch("/api/auth/register")` missing `x-api-key` header → proxy returns 401. Registration broken.
+*Fix:* Replaced with `apiFetch("/api/auth/register", ...)`.
+
+**9. Etsy listing creation had wrong `when_made` enum and missing required fields (CRITICAL — Etsy 400):**
+`etsy-publish-service.ts` sent `when_made: "2020_2024"` (invalid — valid is `"2020_2026"`), no `taxonomy_id` (Etsy requires it), no `type: "download"` (Etsy defaulted to physical and demanded a `shipping_profile_id`), and the upload filename contained `|` and `+` chars (Etsy rejected as invalid).
+*Fix:* `when_made` → `"2020_2026"`. Added `TAXONOMY_BY_FORMAT` map (journal/planner/bundle → 354, checklist/template_pack → 1303, knowledge_guide → 6344, game_sheet/bingo_card → 1347). Added `type: "download"` to listing params. Sanitized upload filename: `title.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "-").slice(0, 60)`. Added explicit `name` field to FormData for Etsy file upload API.
+
+**10. `integrations/etsy.ts` `ETSY_SHARED_SECRET` had no `.env` fallback (MEDIUM):**
+`buildEtsyHeaders()`, `uploadListingFile()`, `uploadListingImage()` all threw "ETSY_SHARED_SECRET not set" locally. Local `.env` uses `ETSY_API_SECRET`. `etsy-client.ts` already had the fallback but `integrations/etsy.ts` did not.
+*Fix:* All three functions updated to `process.env.ETSY_SHARED_SECRET ?? process.env.ETSY_API_SECRET`. Same fix applied to `etsy-market-engine.ts`.
+
+### E2E Test Results (Session 033)
+- Test 1 ✅ Manager agent: 15 cards generated from 18 live Etsy market reports (dataSource: "live_etsy_data")
+- Test 2 ✅ DB verified: LaunchCard row confirmed with opportunityScore 82, format "bundle"
+- Test 3 ✅ Etsy token refreshed and verified: user_id 1247425225, shop 66221967
+- Test 4 ✅ Build pipeline: blueprint ✓ → pdf ✓ → cover_image ✓ → seo_optimize ✓ (quality: 77) → mockups ✓ → etsy publish ✓
+- Test 5 ✅ https://www.etsy.com/listing/4520041657 — Financial Anxiety Healing Bundle live on Etsy
+
+---
+
 ## Session 032 — Full Platform Operationalization: Per-Stage Build Pipeline, Chunked Market Intel, Signal Model
 **Date:** 2026-06-11
 **Focus:** Publish one real product to Etsy and fix every remaining platform bug. Seven-part spec: diagnose, fix build pipeline, fix market intel, fix scan market, audit raw fetch, E2E test, docs+commit.

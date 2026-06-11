@@ -298,6 +298,35 @@ export const dynamic = "force-dynamic";
 
 ---
 
+## RI-022: MarketIntelligenceReport Date Filter Must Use 48h `createdAt` Lookback
+
+**First seen:** 2026-06-11 (Session 033)
+**Occurrences:** 1 (affected manager-agent, market-scout-agent, analyzer, run-scan — 4 files simultaneously)
+
+**Pattern:** Queries for recent market reports used `where: { reportDate: todayString }` — a string comparison against a field that stores a local date. Reports saved at UTC midnight for the day before appear invisible the next morning. Cross-midnight scans (e.g., cron at 04:22 UTC) save with `reportDate = "yesterday"` but are relevant today. All 18 real reports in the DB were invisible to the agent.
+
+**Fix:** Always use `createdAt: { gte: new Date(Date.now() - 48 * 60 * 60 * 1000) }` — a 48-hour DateTime lookback on the actual row creation timestamp. This is timezone-independent and catches any scan from the last 2 days.
+
+**Prevention:** Never filter MarketIntelligenceReport by `reportDate` string. The `createdAt` DateTime field is the only reliable filter for "recent" data.
+
+---
+
+## RI-023: Etsy CreateListing API Requires `type`, `taxonomy_id`, and `when_made: "2020_2026"`
+
+**First seen:** 2026-06-11 (Session 033)
+**Occurrences:** 1
+
+**Pattern:** Etsy v3 API `POST /application/shops/{shopId}/listings` requires:
+- `type: "download"` for digital products (without it, defaults to physical and demands `shipping_profile_id`)
+- `taxonomy_id` (any valid leaf node ID — see Etsy taxonomy API; 354 = Calendars & Planners, 1303 = Stationery, 6344 = Tutorials, 1347 = Party Favors & Games)
+- `when_made: "2020_2026"` not `"2020_2024"` (that enum value doesn't exist)
+- Upload `name` field as explicit FormData entry (not just the blob filename in Content-Disposition)
+- Upload filename must match `[a-zA-Z0-9\s-]` — special chars like `|` and `+` cause 400
+
+**Prevention:** Use `TAXONOMY_BY_FORMAT` map for format → taxonomy_id. Always include `type: "download"` and `when_made: "2020_2026"`. Sanitize product title before using as upload filename: `title.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "-").slice(0, 60)`. Add `formData.append("name", filename)` explicitly.
+
+---
+
 ## Prevention Checklist
 
 Before submitting code for review, verify:
@@ -318,3 +347,5 @@ Before submitting code for review, verify:
 - [ ] Functions that persist external API data validate quality before saving (don't persist empty/zero results)
 - [ ] File generation functions write to `/tmp/` first, then non-fatally to `public/`; downstream readers try `/tmp/` first
 - [ ] `Promise.allSettled` result arrays: check if ALL failed — throw if so, rather than resolving vacuously with empty results
+- [ ] MarketIntelligenceReport queries use `createdAt: { gte: 48h cutoff }` — never `reportDate: todayString`
+- [ ] Etsy listing creation includes `type: "download"`, `taxonomy_id`, `when_made: "2020_2026"`, and sanitized filename with explicit `name` FormData field

@@ -57,7 +57,7 @@ async function setCache(key: string, data: unknown): Promise<void> {
 
 async function etsyGet(path: string): Promise<Response | null> {
   const apiKey = process.env.ETSY_API_KEY;
-  const sharedSecret = process.env.ETSY_SHARED_SECRET;
+  const sharedSecret = process.env.ETSY_SHARED_SECRET ?? process.env.ETSY_API_SECRET;
   if (!apiKey || !sharedSecret) return null;
   return fetch(`${ETSY_BASE}${path}`, {
     headers: { "x-api-key": `${apiKey}:${sharedSecret}` },

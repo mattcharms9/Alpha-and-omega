@@ -86,10 +86,16 @@ export async function POST(req: NextRequest) {
         const description = optimized?.description ?? product.descriptionLong;
         const tags = (optimized?.tags ?? (product.keywords as string[]).slice(0, 13)).map((t: string) => t.slice(0, 20));
 
+        const TAXONOMY_BY_FORMAT: Record<string, number> = {
+          journal: 354, planner: 354, workbook: 354, bundle: 354,
+          checklist: 1303, template_pack: 1303, knowledge_guide: 6344,
+          game_sheet: 1347, bingo_card: 1347,
+        };
         const listing = await createDraftListing(accessToken, shopId, {
           title, description, price: 9.99, tags,
-          quantity: 999, is_digital: true,
-          who_made: "i_did", when_made: "2020_2024",
+          quantity: 999, is_digital: true, type: "download" as const,
+          who_made: "i_did", when_made: "2020_2026",
+          taxonomy_id: TAXONOMY_BY_FORMAT[product.type] ?? 354,
         });
         const listingId = String(listing.listing_id);
 

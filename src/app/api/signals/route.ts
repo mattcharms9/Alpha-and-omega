@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
       const opp = computeOpportunityScore({ monetizationScore: trend.monetizationScore, intensity: trend.intensity, urgency: trend.urgency, evergreenScore: trend.evergreenScore, competitionLevel: trend.competitionLevel, freshnessScore: 100 });
       const rarity = computeRarityScore(trend.competitionLevel, trend.evergreenScore, trend.monetizationScore);
       const saved = await prisma.bankedSignal.create({
-        data: { id: trend.id, emotion: trend.emotion, painPoint: trend.painPoint, description: trend.description, intensity: trend.intensity, monetizationScore: trend.monetizationScore, evergreenScore: trend.evergreenScore, audienceLoyalty: trend.audienceLoyalty, urgency: trend.urgency, platforms: trend.platforms, audienceArchetypes: trend.audienceArchetypes, productOpportunities: trend.productOpportunities, searchVolumeTrend: trend.searchVolumeTrend, competitionLevel: trend.competitionLevel, estimatedAnnualRevenue: trend.estimatedAnnualRevenue, tags: trend.tags, freshnessScore: 100, rarityScore: rarity, opportunityScore: opp, territory: trend.emotion },
+        data: { emotion: trend.emotion, painPoint: trend.painPoint, description: trend.description, intensity: trend.intensity, monetizationScore: trend.monetizationScore, evergreenScore: trend.evergreenScore, audienceLoyalty: trend.audienceLoyalty, urgency: trend.urgency, platforms: trend.platforms, audienceArchetypes: trend.audienceArchetypes, productOpportunities: trend.productOpportunities, searchVolumeTrend: trend.searchVolumeTrend, competitionLevel: trend.competitionLevel, estimatedAnnualRevenue: trend.estimatedAnnualRevenue, tags: trend.tags, freshnessScore: 100, rarityScore: rarity, opportunityScore: opp, territory: trend.emotion },
       });
       return NextResponse.json({ success: true, data: { saved: true, id: saved.id } });
     }
@@ -112,10 +112,17 @@ export async function POST(req: NextRequest) {
           });
           const rarity = computeRarityScore(trend.competitionLevel, trend.evergreenScore, trend.monetizationScore);
 
-          return prisma.bankedSignal.upsert({
-            where: { id: trend.id },
-            create: {
-              id: trend.id,
+          const existing = await prisma.bankedSignal.findFirst({
+            where: { emotion: trend.emotion, painPoint: trend.painPoint, deletedAt: null },
+          });
+          if (existing) {
+            return prisma.bankedSignal.update({
+              where: { id: existing.id },
+              data: { freshnessScore: freshness, opportunityScore: opp, updatedAt: new Date() },
+            });
+          }
+          return prisma.bankedSignal.create({
+            data: {
               emotion: trend.emotion,
               painPoint: trend.painPoint,
               description: trend.description,
@@ -135,11 +142,6 @@ export async function POST(req: NextRequest) {
               rarityScore: rarity,
               opportunityScore: opp,
               territory: trend.emotion,
-            },
-            update: {
-              freshnessScore: freshness,
-              opportunityScore: opp,
-              updatedAt: new Date(),
             },
           });
         })

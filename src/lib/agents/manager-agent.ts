@@ -1,50 +1,9 @@
-import { generateJSON } from "@/lib/ai/claude";
+import { generateWithClaude } from "@/lib/ai/claude";
 import { prisma } from "@/lib/db/prisma";
 import type { Prisma } from "@prisma/client";
-import { buildAgentContext } from "./agent-context";
-import { runMarketScoutAgent } from "./market-scout-agent";
-import { runNicheValidatorAgent } from "./niche-validator-agent";
-import { runConceptGeneratorAgent } from "./concept-generator-agent";
-import { runCompetitionCheckerAgent } from "./competition-checker-agent";
-import { runOpportunityScorerAgent } from "./opportunity-scorer-agent";
-import { makeLogFn, estimateCost } from "./agent-logger";
-import { COLD_START_TOP_CATEGORIES } from "./cold-start-defaults";
+import { makeLogFn } from "./agent-logger";
 import { getLearningContext } from "@/lib/learning/daily-ledger";
-import { getTopOpportunitiesByScore } from "@/lib/market-intelligence/analyzer";
-import type { ScoredOpportunity, LaunchCardData, MarketOpportunity, ConfidenceLevel, CompetitionLevel, AgentContext } from "./agent-types";
-
-// B3: Minimum daily card distribution for diversity
-const DIVERSITY_TARGETS: Record<string, { min: number; max: number }> = {
-  journal:    { min: 3, max: 4 },
-  workbook:   { min: 0, max: 4 },  // combined with journal
-  guide:      { min: 2, max: 3 },
-  game:       { min: 2, max: 3 },
-  bundle:     { min: 2, max: 3 },
-  niche:      { min: 2, max: 3 },
-};
-
-const FORMAT_CATEGORY = (fmt: string): string => {
-  const f = fmt.toLowerCase();
-  if (f.includes("bundle")) return "bundle";
-  if (f.includes("journal") || f.includes("planner") || f.includes("workbook")) return "journal";
-  if (f.includes("guide") || f.includes("checklist") || f.includes("template") || f.includes("knowledge")) return "guide";
-  if (f.includes("game") || f.includes("bingo") || f.includes("trivia") || f.includes("party")) return "game";
-  return "niche";
-};
-
-const MANAGER_SYSTEM_PROMPT = `You are the Manager Agent for an autonomous digital product publishing system.
-
-EDITORIAL REVIEW: Select the best 15 from the scored opportunities. Criteria:
-- No two concepts should be too similar (pick the best from near-duplicates)
-- At least 3 different product formats (journals/workbooks, guides, games, bundles)
-- Mandatory: include at least 2 bundles and 2 games in every queue
-- At least 2 time-sensitive/seasonal opportunities if they exist
-- At least 1 "safe bet" (score >80, low competition, high confidence)
-- Prioritize niches and formats with proven sales data from the learning context
-
-Return: { selected: number[] (0-based indices of chosen 15), managerNote: string (2 sentences) }`;
-
-const COST_LIMIT = parseFloat(process.env.AGENT_DAILY_COST_LIMIT_USD ?? "2.00");
+import type { LaunchCardData, CompetitionLevel, ConfidenceLevel } from "./agent-types";
 
 interface ManagerResult {
   queueId: string;
@@ -54,9 +13,109 @@ interface ManagerResult {
   runDurationMs: number;
 }
 
+// Shape Claude is asked to return (validated before casting)
+interface RawCard {
+  productTitle?: string;
+  productFormat?: string;
+  targetAudience?: string;
+  emotionalHook?: string;
+  primaryKeyword?: string;
+  suggestedPrice?: number;
+  etsyListingCount?: number;
+  etsyAvgPrice?: number;
+  competitionLevel?: string;
+  trendingScore?: number;
+  opportunityScore?: number;
+  whyNow?: string;
+  whyYou?: string;
+  expectedRevenue?: string;
+  confidenceLevel?: string;
+}
+
+const VALID_FORMATS = ["journal", "planner", "workbook", "knowledge_guide", "checklist", "game_sheet", "bingo_card", "bundle", "template_pack"];
+const VALID_COMPETITION = ["low", "medium", "high", "saturated"];
+const VALID_CONFIDENCE = ["high", "medium", "low"];
+
+function coerceCard(c: RawCard, i: number, fromLiveData: boolean): LaunchCardData {
+  const opp = typeof c.opportunityScore === "number" ? Math.min(100, Math.max(0, c.opportunityScore)) : 70;
+  const comp = (VALID_COMPETITION.includes(c.competitionLevel ?? "") ? c.competitionLevel : "medium") as CompetitionLevel;
+  const conf = (VALID_CONFIDENCE.includes(c.confidenceLevel ?? "") ? c.confidenceLevel : "medium") as ConfidenceLevel;
+  return {
+    position: i + 1,
+    productTitle: c.productTitle ?? `Product ${i + 1}`,
+    productFormat: VALID_FORMATS.includes(c.productFormat ?? "") ? (c.productFormat as string) : "knowledge_guide",
+    targetAudience: c.targetAudience ?? "general audience",
+    emotionalHook: c.emotionalHook ?? "",
+    primaryKeyword: c.primaryKeyword ?? "",
+    suggestedPrice: typeof c.suggestedPrice === "number" ? c.suggestedPrice : 12,
+    etsyListingCount: typeof c.etsyListingCount === "number" ? c.etsyListingCount : 0,
+    etsyAvgPrice: typeof c.etsyAvgPrice === "number" ? c.etsyAvgPrice : 12,
+    competitionLevel: comp,
+    trendingScore: typeof c.trendingScore === "number" ? c.trendingScore : opp,
+    opportunityScore: opp,
+    confidenceLevel: conf,
+    whyNow: c.whyNow ?? "",
+    whyYou: c.whyYou ?? "",
+    expectedRevenue: c.expectedRevenue ?? "$100–$300/month",
+    dataSource: fromLiveData ? "live_etsy_data" : "ai_estimate",
+    marketEvidence: fromLiveData
+      ? `Real Etsy data: ${c.etsyListingCount ?? 0} listings, avg $${c.etsyAvgPrice ?? "?"}, score ${opp}/100.`
+      : undefined,
+    agentReasoning: {
+      scout: fromLiveData
+        ? `Live DB: niche "${c.primaryKeyword}" — ${c.etsyListingCount ?? 0} listings at avg $${c.etsyAvgPrice ?? "?"}.`
+        : `AI estimate for "${c.primaryKeyword}" — no recent Etsy scan data.`,
+      validator: `${comp} competition; score ${opp}/100.`,
+      generator: `Concept: "${c.productTitle ?? ""}" targeting ${c.targetAudience ?? "general audience"}.`,
+      competition: `${comp} competition level. ${opp >= 75 ? "Strong opportunity." : "Proceed carefully."}`,
+      scorer: `Score ${opp}/100 from ${fromLiveData ? "live Etsy market data" : "AI knowledge"}.`,
+      manager: `Selected at position #${i + 1}.`,
+    },
+  };
+}
+
+async function callClaudeForCards(systemPrompt: string, userPrompt: string): Promise<RawCard[]> {
+  const raw = await generateWithClaude(systemPrompt, userPrompt, 8192, "manager-agent");
+  const stripped = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
+  try {
+    const parsed = JSON.parse(stripped) as unknown;
+    if (Array.isArray(parsed)) return parsed as RawCard[];
+    // Sometimes Claude wraps in { "cards": [...] }
+    const asObj = parsed as Record<string, unknown>;
+    if (asObj.cards && Array.isArray(asObj.cards)) return asObj.cards as RawCard[];
+    return [];
+  } catch (err) {
+    console.error("[manager-agent] JSON parse failed. Raw response:\n", raw);
+    console.error("[manager-agent] Parse error:", err instanceof Error ? err.message : err);
+    return [];
+  }
+}
+
+const CARD_SCHEMA = `Each card object needs ALL these fields:
+- productTitle: string (compelling Etsy listing title, under 140 chars)
+- productFormat: string (one of: journal, planner, workbook, knowledge_guide, checklist, game_sheet, bingo_card, bundle, template_pack)
+- targetAudience: string (specific audience, e.g. "new moms dealing with postpartum anxiety")
+- emotionalHook: string (the core emotional pain or desire being addressed)
+- primaryKeyword: string (the exact niche keyword)
+- suggestedPrice: number (USD, e.g. 12.99)
+- etsyListingCount: number (total competing listings)
+- etsyAvgPrice: number (average price on Etsy)
+- competitionLevel: string (low | medium | high | saturated)
+- trendingScore: number (0-100)
+- opportunityScore: number (0-100)
+- whyNow: string (1 sentence — timing or seasonal reason to launch now)
+- whyYou: string (1 sentence — why a solo creator can win this niche)
+- expectedRevenue: string (e.g. "$180–$420/month at 3–7 sales/day")
+- confidenceLevel: string (high | medium | low)`;
+
+const DIVERSITY_REQUIREMENT = `DIVERSITY REQUIREMENT across the 15 cards:
+- Maximum 3 cards per product format type
+- Include at least 2 bundles, 2 game_sheet or bingo_card, 2 knowledge_guide or checklist
+- At least 1 seasonal or time-sensitive opportunity
+- At least 1 safe bet (opportunityScore > 80, competitionLevel low or medium)`;
+
 export async function runManagerAgent(date: string): Promise<ManagerResult> {
   const runStart = Date.now();
-  let totalCost = 0;
 
   const queue = await prisma.dailyQueue.upsert({
     where: { date },
@@ -64,84 +123,118 @@ export async function runManagerAgent(date: string): Promise<ManagerResult> {
     update: { status: "pending", generatedAt: new Date() },
   });
 
-  const log = makeLogFn(queue.id);
-  const ctx = await buildAgentContext(queue.id, date);
+  makeLogFn(queue.id); // side-effect: initialises log context
 
-  // Stage 1: Market Scout
-  let opportunities: MarketOpportunity[];
-  try {
-    opportunities = await runMarketScoutAgent(ctx, log);
-    totalCost += estimateCost(600);
-  } catch {
-    opportunities = [];
+  // 48-hour lookback using DateTime field — never string date comparison
+  const cutoff = new Date(Date.now() - 48 * 60 * 60 * 1000);
+  const reports = await prisma.marketIntelligenceReport.findMany({
+    where: { createdAt: { gte: cutoff } },
+    orderBy: { opportunityScore: "desc" },
+    take: 25,
+  });
+
+  console.log(`[manager-agent] Found ${reports.length} MarketIntelligenceReport rows in last 48h`);
+
+  const isColdStart = reports.length === 0;
+  const learningContext = await getLearningContext().catch(() => "No learning data available.");
+  let totalCost = 0;
+  let cards: LaunchCardData[] = [];
+  let managerNote = "Today's batch is ready for review.";
+
+  // ── Path A: Real market data available ──────────────────────────────────────
+  if (!isColdStart) {
+    const marketDataContext = reports.map((r) => {
+      const pr = r.winningPriceRange as { min?: number; max?: number; sweet?: number } | null;
+      const titles = (r.winningTitleStructures as string[])?.slice(0, 3) ?? [];
+      const opps = (r.productOpportunities as Array<{ title?: string; description?: string }>)?.slice(0, 3) ?? [];
+      const avoid = (r.avoidPatterns as string[])?.slice(0, 2) ?? [];
+      return [
+        `NICHE: ${r.niche}`,
+        `  opportunityScore: ${r.opportunityScore}/100`,
+        `  competitionLevel: ${r.competitionLevel}`,
+        `  totalListings: ${r.totalListings}`,
+        `  sweetSpotPrice: $${pr?.sweet ?? "?"}`,
+        `  winningPriceRange: $${pr?.min ?? "?"} – $${pr?.max ?? "?"}`,
+        titles.length ? `  winningTitleStructures: ${titles.join(" | ")}` : null,
+        opps.length ? `  productOpportunities: ${opps.map((o) => o.title ?? o.description ?? "").filter(Boolean).join(" | ")}` : null,
+        avoid.length ? `  avoidPatterns: ${avoid.join(" | ")}` : null,
+      ].filter(Boolean).join("\n");
+    }).join("\n\n");
+
+    const systemPrompt = `You are the Manager Agent for an autonomous Etsy digital product publishing system. You have real live Etsy market intelligence data below. Generate exactly 15 high-opportunity LaunchCard products based ONLY on the provided niches.
+
+${DIVERSITY_REQUIREMENT}
+
+${CARD_SCHEMA}
+
+Return ONLY a JSON array. Start with [ and end with ]. No markdown fences. No text before or after the array.`;
+
+    const userPrompt = `REAL ETSY MARKET DATA (${reports.length} niches scanned in last 48h):
+${marketDataContext}
+
+SELLER LEARNING CONTEXT:
+${learningContext}
+
+Generate exactly 15 LaunchCard objects. Each card must use a real niche from the market data above for primaryKeyword. Use the actual etsyListingCount, etsyAvgPrice, and competitionLevel from the data.`;
+
+    try {
+      const rawCards = await callClaudeForCards(systemPrompt, userPrompt);
+      if (rawCards.length > 0) {
+        cards = rawCards.slice(0, 15).map((c, i) => coerceCard(c, i, true));
+        managerNote = `Generated ${cards.length} opportunities from ${reports.length} live Etsy market reports. Top niche: ${reports[0]?.niche ?? "N/A"} (score ${reports[0]?.opportunityScore ?? 0}/100).`;
+        totalCost += 0.08;
+        console.log(`[manager-agent] Generated ${cards.length} cards from live market data`);
+      } else {
+        console.warn("[manager-agent] Claude returned empty array from live data — falling back to cold start");
+      }
+    } catch (err) {
+      console.error("[manager-agent] Live-data Claude call failed:", err instanceof Error ? err.message : err);
+    }
   }
 
-  // Fallback when scout returns empty (Etsy API unavailable, cold start, etc.)
-  // Use proven Etsy niches with conservative estimates so downstream stages can run.
-  if (opportunities.length === 0) {
-    opportunities = COLD_START_TOP_CATEGORIES.map((keyword, i) => ({
-      keyword,
-      category: keyword.split(" ").pop() ?? "general",
-      etsyListingCount: 800 - i * 80,
-      etsyAvgPrice: 9 + i * 1.5,
-      trendingScore: 72 - i * 4,
-      competitionLevel: i < 3 ? ("medium" as const) : ("low" as const),
-      topRelatedKeywords: [],
-      priceGap: false,
-      source: "performance_adjacency" as const,
-    }));
+  // ── Path B: Cold start (no market data, or live-data path failed) ──────────
+  if (cards.length === 0) {
+    console.log(`[manager-agent] Cold start — generating from AI knowledge (isColdStart=${isColdStart})`);
+
+    const systemPrompt = `You are the Manager Agent for an autonomous Etsy digital product publishing system. No live market scan data is available. Generate exactly 15 high-opportunity digital product ideas for Etsy based on proven evergreen niches.
+
+${DIVERSITY_REQUIREMENT}
+
+${CARD_SCHEMA}
+
+Return ONLY a JSON array. Start with [ and end with ]. No markdown fences. No text before or after the array.`;
+
+    const userPrompt = `Generate 15 high-opportunity Etsy digital product LaunchCards using your knowledge of proven Etsy niches for journals, workbooks, planners, game sheets, and knowledge guides.
+
+Focus on: emotional wellness, self-improvement, seasonal events, party games, and productivity niches. Use realistic Etsy market data estimates.
+
+SELLER CONTEXT:
+${learningContext}`;
+
+    try {
+      const rawCards = await callClaudeForCards(systemPrompt, userPrompt);
+      cards = rawCards.slice(0, 15).map((c, i) => coerceCard(c, i, false));
+      totalCost += 0.04;
+      console.log(`[manager-agent] Cold start generated ${cards.length} cards`);
+    } catch (err) {
+      console.error("[manager-agent] Cold start Claude call failed:", err instanceof Error ? err.message : err);
+    }
+
+    if (isColdStart) {
+      managerNote = "No recent market data available — using AI knowledge for initial queue. Run market intelligence scan to get real Etsy data.";
+    } else {
+      managerNote = "Live market data found but card generation failed — using AI knowledge fallback. Check Vercel logs.";
+    }
   }
 
-  if (totalCost > COST_LIMIT * 0.3) {
-    opportunities = opportunities.slice(0, 15);
-  }
-
-  // Stage 2: Niche Validator
-  const niches = await runNicheValidatorAgent(opportunities, ctx, log).catch(() => opportunities.map((o) => ({ ...o, catalogFit: 50, catalogConflict: false, conflictingProduct: null, validationNotes: "Fallback" })));
-  totalCost += estimateCost(4000);
-
-  if (totalCost > COST_LIMIT * 0.5) {
-    await prisma.dailyQueue.update({ where: { id: queue.id }, data: { status: "failed", agentRunLog: { reason: "Cost cap reached at niche validator" } as Prisma.InputJsonValue } });
-    throw new Error("Daily agent cost cap reached");
-  }
-
-  // Stage 3: Concept Generator
-  const concepts = await runConceptGeneratorAgent(niches, ctx, log).catch(() => []);
-  totalCost += estimateCost(8000);
-
-  // Stage 4: Competition Checker
-  const checks = await runCompetitionCheckerAgent(concepts, log).catch(() => []);
-  totalCost += estimateCost(4000);
-
-  // Stage 5: Opportunity Scorer
-  const scored = await runOpportunityScorerAgent(concepts, checks, niches, ctx, log).catch(() => []);
-  totalCost += estimateCost(5000);
-
-  // Stage 6: Manager Editorial Review (with learning + market intelligence context)
-  const [learningContext, topMarketOpps] = await Promise.all([
-    getLearningContext().catch(() => "No learning data available."),
-    getTopOpportunitiesByScore(5, date).catch(() => []),
-  ]);
-
-  const marketIntelContext = topMarketOpps.length > 0
-    ? `\nLIVE ETSY MARKET DATA (last night's intelligence):\n${topMarketOpps.map((o) =>
-        `- ${o.niche}: score ${o.opportunityScore}/100, ${o.competitionLevel} competition, sweet price $${(o.winningPriceRange as { sweet?: number } | null)?.sweet ?? "?"}`
-      ).join("\n")}`
-    : "";
-
-  const liveNicheSet = new Set(topMarketOpps.map((o) => o.niche));
-
-  const { selected15, managerNote, diversityBreakdown } = await runManagerEditorialReview(scored, ctx, learningContext + marketIntelContext, liveNicheSet);
-  totalCost += estimateCost(6000);
-
-  // Write LaunchCards
-  if (selected15.length > 0) {
+  // ── Save LaunchCards ────────────────────────────────────────────────────────
+  if (cards.length > 0) {
     await prisma.$transaction(
-      selected15.map((card, i) =>
+      cards.map((card) =>
         prisma.launchCard.create({
           data: {
             queueId: queue.id,
-            position: i + 1,
+            position: card.position,
             productTitle: card.productTitle,
             productFormat: card.productFormat,
             targetAudience: card.targetAudience,
@@ -166,101 +259,28 @@ export async function runManagerAgent(date: string): Promise<ManagerResult> {
     );
   }
 
+  const runDurationMs = Date.now() - runStart;
+
   await prisma.dailyQueue.update({
     where: { id: queue.id },
     data: {
-      status: selected15.length >= 10 ? "ready" : "partial",
-      agentRunLog: { managerNote, isColdStart: ctx.isColdStart, totalCost, runDurationMs: Date.now() - runStart, diversityBreakdown } as Prisma.InputJsonValue,
+      status: cards.length >= 10 ? "ready" : cards.length > 0 ? "partial" : "failed",
+      agentRunLog: {
+        managerNote,
+        isColdStart,
+        totalCost,
+        runDurationMs,
+        reportCount: reports.length,
+        cardsGenerated: cards.length,
+      } as Prisma.InputJsonValue,
     },
   });
 
-  // Update empire config with cost
   void prisma.empireConfig.upsert({
     where: { id: "singleton" },
     create: { id: "singleton", lastAgentRunAt: new Date(), lastAgentRunCost: totalCost, totalAgentRunCost: totalCost },
     update: { lastAgentRunAt: new Date(), lastAgentRunCost: totalCost, totalAgentRunCost: { increment: totalCost } },
   }).catch(() => {});
 
-  return { queueId: queue.id, cards: selected15, managerNote, totalAgentCost: totalCost, runDurationMs: Date.now() - runStart };
-}
-
-async function runManagerEditorialReview(
-  scored: ScoredOpportunity[],
-  ctx: AgentContext,
-  learningContext: string,
-  liveNicheSet: Set<string> = new Set()
-): Promise<{ selected15: LaunchCardData[]; managerNote: string; diversityBreakdown: Record<string, number> }> {
-  if (scored.length === 0) {
-    return { selected15: [], managerNote: "No opportunities available today.", diversityBreakdown: {} };
-  }
-
-  const coldStartPrefix = ctx.coldStartNote ? `\n${ctx.coldStartNote}\n` : "";
-  const prompt = `Review ${scored.length} scored opportunities for this digital product seller.${coldStartPrefix}
-
-LEARNING CONTEXT (use this to prioritize selections):
-${learningContext}
-
-DIVERSITY REQUIREMENT: The 15 selected must include at minimum:
-- 2 bundles
-- 2 games or party products
-- 2 knowledge guides or checklists
-- 2 journals, planners, or workbooks
-- 1 wildcard (your highest confidence pick regardless of category)
-
-Select the best 15 ensuring variety in formats, 2+ seasonal picks, 1 safe bet, 1 fresh niche.
-Return: { selected: number[] (0-based indices, max 15), managerNote: "2 sentences" }
-
-Opportunities:
-${scored.map((s, i) => `${i}: "${s.concept.title}" | score=${s.opportunityScore} | conf=${s.confidenceLevel} | format=${s.concept.format} | competition=${s.competition.verdict}`).join("\n")}`;
-
-  const result = await generateJSON<{ selected: number[]; managerNote: string }>(
-    MANAGER_SYSTEM_PROMPT, prompt, 1000
-  ).catch(() => ({ selected: scored.slice(0, 15).map((_, i) => i), managerNote: "Today's batch is ready for review." }));
-
-  const indices = (result.selected ?? []).slice(0, 15).filter((i) => i >= 0 && i < scored.length);
-  const selected = indices.length >= 10 ? indices : scored.slice(0, 15).map((_, i) => i);
-
-  // B3: Enforce diversity — log breakdown (enforcement is advisory for now; the prompt guides selection)
-  const diversityBreakdown: Record<string, number> = {};
-  selected.forEach((idx) => {
-    const cat = FORMAT_CATEGORY(scored[idx]!.concept.format);
-    diversityBreakdown[cat] = (diversityBreakdown[cat] ?? 0) + 1;
-  });
-
-  const cards: LaunchCardData[] = selected.map((idx, pos) => {
-    const s = scored[idx]!;
-    const isLiveData = liveNicheSet.has(s.concept.keyword);
-    return {
-      position: pos + 1,
-      productTitle: s.concept.title,
-      productFormat: s.concept.format,
-      targetAudience: s.concept.targetAudience,
-      emotionalHook: s.concept.emotionalHook,
-      primaryKeyword: s.concept.keyword,
-      suggestedPrice: s.concept.suggestedPrice,
-      etsyListingCount: s.niche.etsyListingCount,
-      etsyAvgPrice: s.niche.etsyAvgPrice,
-      competitionLevel: s.niche.competitionLevel as CompetitionLevel,
-      trendingScore: s.niche.trendingScore,
-      opportunityScore: s.opportunityScore,
-      confidenceLevel: s.confidenceLevel as ConfidenceLevel,
-      whyNow: s.whyNow,
-      whyYou: s.whyYou,
-      expectedRevenue: s.expectedRevenue,
-      dataSource: isLiveData ? "live_etsy_data" : "ai_estimate",
-      marketEvidence: isLiveData
-        ? `Based on Etsy market scan: ${s.niche.etsyListingCount} listings, avg price $${s.niche.etsyAvgPrice.toFixed(2)}, opportunity score ${s.opportunityScore}/100.`
-        : undefined,
-      agentReasoning: {
-        scout: `Found keyword "${s.concept.keyword}" with ${s.niche.etsyListingCount} listings at avg $${s.niche.etsyAvgPrice.toFixed(2)}.`,
-        validator: s.niche.validationNotes,
-        generator: `Concept: "${s.concept.title}" targeting ${s.concept.targetAudience}.`,
-        competition: s.competition.gapDescription,
-        scorer: `Score: ${s.opportunityScore}/100 — ${s.breakdown.marketScore.toFixed(0)} market, ${s.breakdown.competitionScore.toFixed(0)} competition, ${s.breakdown.catalogFitScore.toFixed(0)} fit, ${s.breakdown.timingScore.toFixed(0)} timing.`,
-        manager: `Selected at position #${pos + 1}. ${result.managerNote}`,
-      },
-    };
-  });
-
-  return { selected15: cards, managerNote: result.managerNote, diversityBreakdown };
+  return { queueId: queue.id, cards, managerNote, totalAgentCost: totalCost, runDurationMs };
 }
