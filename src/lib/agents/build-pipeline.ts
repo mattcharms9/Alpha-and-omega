@@ -8,16 +8,24 @@ import { autoPromoteProduct } from "@/lib/promotions/auto-promote";
 import type { Prisma } from "@prisma/client";
 import type { BuildStatus } from "./agent-types";
 
-const TOTAL_STAGES = 8; // blueprint, pdf, cover_image, seo_optimize, mockups, etsy_draft, publish, pinterest
+const TOTAL_STAGES = 8;
 
-const FAILED_STATUS: Record<string, BuildStatus> = {
-  blueprinting: "failed_blueprinting",
-  generating_pdf: "failed_generating_pdf",
-  generating_cover: "failed_generating_cover",
-  optimizing_seo: "failed_optimizing_seo",
-  generating_mockups: "failed_generating_mockups",
-  creating_listing: "failed_creating_listing",
-  publishing: "failed_publishing",
+const STAGE_ACTIVE_STATUS: Record<string, BuildStatus> = {
+  blueprint:    "blueprinting",
+  pdf:          "generating_pdf",
+  cover_image:  "generating_cover",
+  seo:          "optimizing_seo",
+  mockups:      "generating_mockups",
+  etsy_publish: "creating_listing",
+};
+
+const STAGE_FAILED_STATUS: Record<string, BuildStatus> = {
+  blueprint:    "failed_blueprinting",
+  pdf:          "failed_generating_pdf",
+  cover_image:  "failed_generating_cover",
+  seo:          "failed_optimizing_seo",
+  mockups:      "failed_generating_mockups",
+  etsy_publish: "failed_creating_listing",
 };
 
 async function setBuildStatus(cardId: string, status: BuildStatus, note?: string) {
@@ -26,6 +34,54 @@ async function setBuildStatus(cardId: string, status: BuildStatus, note?: string
     data: { buildStatus: status, ...(note ? { failureReason: note } : {}) },
   });
 }
+
+// ── runStage: universal stage runner ────────────────────────────────────────
+// Required: throws on failure → pipeline aborts.
+// Optional: returns { success: false } on failure → pipeline continues.
+
+type StageSuccess<T> = { success: true; result: T };
+type StageFail = { success: false; skipped: true; error: string };
+type StageOutcome<T> = StageSuccess<T> | StageFail;
+
+async function runStage<T>(
+  cardId: string,
+  stageName: string,
+  isRequired: boolean,
+  timeoutMs: number,
+  fn: () => Promise<T>
+): Promise<StageOutcome<T>> {
+  const activeStatus = STAGE_ACTIVE_STATUS[stageName];
+  if (activeStatus) await setBuildStatus(cardId, activeStatus);
+  console.log(`[pipeline] Starting stage: ${stageName}`);
+
+  try {
+    const result = await Promise.race<T>([
+      fn(),
+      new Promise<T>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`${stageName} timed out after ${timeoutMs}ms`)),
+          timeoutMs
+        )
+      ),
+    ]);
+    console.log(`[pipeline] ✓ ${stageName}`);
+    return { success: true, result };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[pipeline] Stage ${stageName} failed: ${message}`);
+
+    if (isRequired) {
+      const failedStatus = STAGE_FAILED_STATUS[stageName] ?? "failed";
+      await setBuildStatus(cardId, failedStatus as BuildStatus, message);
+      throw new Error(`Required stage ${stageName} failed: ${message}`);
+    }
+
+    console.warn(`[pipeline] Optional stage ${stageName} skipped — continuing pipeline`);
+    return { success: false, skipped: true, error: message };
+  }
+}
+
+// ── Main pipeline ────────────────────────────────────────────────────────────
 
 export async function runBuildPipeline(cardId: string): Promise<void> {
   const card = await prisma.launchCard.findUniqueOrThrow({ where: { id: cardId } });
@@ -36,184 +92,190 @@ export async function runBuildPipeline(cardId: string): Promise<void> {
   });
 
   const completed: string[] = [];
-  const failed: Array<{ stage: string; reason: string }> = [];
+  const failedStages: Array<{ stage: string; reason: string }> = [];
 
-  function markDone(stage: string) { completed.push(stage); }
-  function markFailed(stage: string, reason: string) { failed.push({ stage, reason }); }
-
-  let currentStage: string = "blueprinting";
+  // Shared state across stages (set in blueprint, used in seo)
+  let productId = "";
+  let savedBlueprint: Awaited<ReturnType<typeof generateProductBlueprint>> | null = null;
 
   try {
-    // Stage 1: Blueprint (fatal — no product = nothing to build)
-    const blueprint = await generateProductBlueprint(
-      card.emotionalHook,
-      card.productFormat as Parameters<typeof generateProductBlueprint>[1],
-      card.targetAudience
+    // ── Stage 1: Blueprint (required, 60s) ─────────────────────────────────
+    const bpOutcome = await runStage(
+      cardId, "blueprint", true, 60_000,
+      async () => {
+        const blueprint = await generateProductBlueprint(
+          card.emotionalHook,
+          card.productFormat as Parameters<typeof generateProductBlueprint>[1],
+          card.targetAudience
+        );
+        const product = await prisma.product.create({
+          data: {
+            title: card.productTitle,
+            subtitle: blueprint.subtitle,
+            tagline: blueprint.tagline,
+            type: card.productFormat,
+            targetEmotion: card.emotionalHook,
+            targetAudience: card.targetAudience,
+            audienceArchetype: blueprint.audienceArchetype,
+            pageCount: blueprint.pageCount,
+            sections: blueprint.sections as unknown as Prisma.InputJsonValue,
+            psychologicalFramework: blueprint.psychologicalFramework,
+            transformationPromise: blueprint.transformationPromise,
+            emotionalHooks: blueprint.emotionalHooks as unknown as Prisma.InputJsonValue,
+            coverConcept: blueprint.coverConcept as unknown as Prisma.InputJsonValue,
+            marketingAngles: blueprint.marketingAngles as unknown as Prisma.InputJsonValue,
+            pricingStrategy: { ...blueprint.pricingStrategy, digitalPrice: card.suggestedPrice } as unknown as Prisma.InputJsonValue,
+            platforms: blueprint.platforms as unknown as Prisma.InputJsonValue,
+            estimatedMonthlyRevenue: blueprint.estimatedMonthlyRevenue,
+            competitiveAdvantage: blueprint.competitiveAdvantage,
+            keywords: [card.primaryKeyword, ...blueprint.keywords.slice(0, 12)] as unknown as Prisma.InputJsonValue,
+            descriptionShort: blueprint.descriptionShort,
+            descriptionLong: blueprint.descriptionLong,
+            status: "draft",
+            launchCardId: cardId,
+          },
+        });
+        await prisma.launchCard.update({ where: { id: cardId }, data: { productId: product.id } });
+        console.log(`[build-pipeline] ✓ blueprint — ${product.title}`);
+        return { productId: product.id, blueprint };
+      }
     );
+    // Required — if failed it threw. Safe to access result.
+    if (!bpOutcome.success) throw new Error("unreachable");
+    productId = bpOutcome.result.productId;
+    savedBlueprint = bpOutcome.result.blueprint;
+    completed.push("blueprint");
 
-    const product = await prisma.product.create({
-      data: {
-        title: card.productTitle,
-        subtitle: blueprint.subtitle,
-        tagline: blueprint.tagline,
-        type: card.productFormat,
-        targetEmotion: card.emotionalHook,
-        targetAudience: card.targetAudience,
-        audienceArchetype: blueprint.audienceArchetype,
-        pageCount: blueprint.pageCount,
-        sections: blueprint.sections as unknown as Prisma.InputJsonValue,
-        psychologicalFramework: blueprint.psychologicalFramework,
-        transformationPromise: blueprint.transformationPromise,
-        emotionalHooks: blueprint.emotionalHooks as unknown as Prisma.InputJsonValue,
-        coverConcept: blueprint.coverConcept as unknown as Prisma.InputJsonValue,
-        marketingAngles: blueprint.marketingAngles as unknown as Prisma.InputJsonValue,
-        pricingStrategy: { ...blueprint.pricingStrategy, digitalPrice: card.suggestedPrice } as unknown as Prisma.InputJsonValue,
-        platforms: blueprint.platforms as unknown as Prisma.InputJsonValue,
-        estimatedMonthlyRevenue: blueprint.estimatedMonthlyRevenue,
-        competitiveAdvantage: blueprint.competitiveAdvantage,
-        keywords: ([card.primaryKeyword, ...blueprint.keywords.slice(0, 12)] as unknown as Prisma.InputJsonValue),
-        descriptionShort: blueprint.descriptionShort,
-        descriptionLong: blueprint.descriptionLong,
-        status: "draft",
-        launchCardId: cardId,
-      },
-    });
+    // ── Stage 2: PDF (required, 120s) ──────────────────────────────────────
+    const pdfOutcome = await runStage<void>(
+      cardId, "pdf", true, 120_000,
+      async () => { await generateProductPdf(productId); }
+    );
+    if (pdfOutcome.success) completed.push("pdf");
 
-    await prisma.launchCard.update({ where: { id: cardId }, data: { productId: product.id } });
-    markDone("blueprint");
-    console.log(`[build-pipeline] ✓ blueprint — ${product.title}`);
+    // ── Stage 3: Cover image (optional, 30s) ───────────────────────────────
+    const coverOutcome = await runStage<{ path: string } | null>(
+      cardId, "cover_image", false, 30_000,
+      async () => {
+        try {
+          return await generateProductCoverImage(productId);
+        } catch (err) {
+          console.log("[pipeline] Cover image skipped —", err instanceof Error ? err.message : "DALL-E unavailable");
+          return null;
+        }
+      }
+    );
+    if (coverOutcome.success && coverOutcome.result) {
+      completed.push("cover_image");
+    } else if (!coverOutcome.success) {
+      failedStages.push({ stage: "cover_image", reason: coverOutcome.error });
+    }
 
-    // Stage 2: PDF (non-fatal)
-    currentStage = "generating_pdf";
-    await setBuildStatus(cardId, "generating_pdf");
-    await generateProductPdf(product.id)
-      .then(() => { markDone("pdf"); console.log(`[build-pipeline] ✓ pdf`); })
-      .catch((err) => {
-        console.error("[build-pipeline] PDF failed (non-fatal):", err instanceof Error ? err.message : err);
-        markFailed("pdf", err instanceof Error ? err.message : "PDF generation failed");
-      });
-
-    // Stage 3: Cover image (non-fatal)
-    currentStage = "generating_cover";
-    await setBuildStatus(cardId, "generating_cover");
-    await generateProductCoverImage(product.id)
-      .then(() => { markDone("cover_image"); console.log(`[build-pipeline] ✓ cover_image`); })
-      .catch((err) => {
-        console.error("[build-pipeline] Cover image failed (non-fatal):", err instanceof Error ? err.message : err);
-        markFailed("cover_image", err instanceof Error ? err.message : "Cover image failed");
-      });
-
-    // Stage 4: SEO optimize (non-fatal)
-    currentStage = "optimizing_seo";
-    await setBuildStatus(cardId, "optimizing_seo");
-    await generateOptimizedListing(blueprint, [card.primaryKeyword])
-      .then(async (optimized) => {
-        let finalListing = optimized;
-        const qualityScore = scoreListingQuality(optimized);
+    // ── Stage 4: SEO optimize (required, 30s) ──────────────────────────────
+    const seoOutcome = await runStage<number>(
+      cardId, "seo", true, 30_000,
+      async () => {
+        // Use blueprint from Stage 1; guaranteed non-null since blueprint is required
+        const bp = savedBlueprint!;
+        let finalListing = await generateOptimizedListing(bp, [card.primaryKeyword]);
+        const qualityScore = scoreListingQuality(finalListing);
         if (qualityScore < 75) {
-          const retry = await generateOptimizedListing(blueprint, [card.primaryKeyword]).catch(() => optimized);
-          const retryScore = scoreListingQuality(retry);
-          if (retryScore > qualityScore) finalListing = retry;
+          const retry = await generateOptimizedListing(bp, [card.primaryKeyword]).catch(() => finalListing);
+          if (scoreListingQuality(retry) > qualityScore) finalListing = retry;
         }
         const finalScore = scoreListingQuality(finalListing);
         await prisma.product.update({
-          where: { id: product.id },
+          where: { id: productId },
           data: {
             optimizedListing: finalListing as unknown as Prisma.InputJsonValue,
             listingQualityScore: finalScore,
           },
         });
-        markDone("seo_optimize");
         console.log(`[build-pipeline] ✓ seo_optimize — quality: ${finalScore}`);
-      })
-      .catch((err) => {
-        console.error("[build-pipeline] SEO optimize failed (non-fatal):", err instanceof Error ? err.message : err);
-        markFailed("seo_optimize", err instanceof Error ? err.message : "SEO failed");
-      });
+        return finalScore;
+      }
+    );
+    if (seoOutcome.success) completed.push("seo_optimize");
 
-    // Stage 5: Mockups (non-fatal)
-    currentStage = "generating_mockups";
-    await setBuildStatus(cardId, "generating_mockups");
-    await generateProductMockups(product.id)
-      .then(() => { markDone("mockups"); console.log(`[build-pipeline] ✓ mockups`); })
-      .catch((err) => {
-        console.error("[build-pipeline] Mockups failed (non-fatal):", err instanceof Error ? err.message : err);
-        markFailed("mockups", err instanceof Error ? err.message : "Mockups failed");
-      });
-
-    await setBuildStatus(cardId, "built");
-    currentStage = "built";
-
-    // Stage 6-7: Etsy publish (non-fatal — card saved as "built" if Etsy fails)
-    const refreshed = await prisma.product.findUnique({ where: { id: product.id } });
-    if (refreshed?.pdfPath && refreshed.coverImagePath) {
-      currentStage = "creating_listing";
-      await setBuildStatus(cardId, "creating_listing");
-      await publishProductToEtsy(product.id)
-        .then(async (etsyResult) => {
-          currentStage = "publishing";
-          await setBuildStatus(cardId, "publishing");
-          await prisma.launchCard.update({
-            where: { id: cardId },
-            data: {
-              etsyListingId: etsyResult.listingId,
-              buildStatus: "published",
-              publishedAt: new Date(),
-            },
-          });
-          markDone("etsy_draft");
-          markDone("publish");
-          console.log(`[build-pipeline] ✓ published — ${etsyResult.listingUrl}`);
-        })
-        .catch((err) => {
-          console.error("[build-pipeline] Etsy publish failed:", err instanceof Error ? err.message : err);
-          markFailed("etsy_draft", err instanceof Error ? err.message : "Etsy publish failed");
-          markFailed("publish", "Publish to Etsy failed — publish manually from Products page");
-        });
-    } else {
-      console.warn(`[build-pipeline] Skipping Etsy — pdfPath: ${refreshed?.pdfPath}, coverImagePath: ${refreshed?.coverImagePath}`);
-      markFailed("etsy_draft", "PDF or cover image missing — publish manually from Products page");
-      markFailed("publish", "Skipped — prerequisite assets missing");
+    // ── Stage 5: Mockups (optional, 20s) ───────────────────────────────────
+    const mockupOutcome = await runStage<{ paths: string[] } | null>(
+      cardId, "mockups", false, 20_000,
+      async () => {
+        try {
+          return await generateProductMockups(productId);
+        } catch {
+          console.log("[pipeline] Mockups skipped — DALL-E unavailable");
+          return null;
+        }
+      }
+    );
+    if (mockupOutcome.success && mockupOutcome.result && mockupOutcome.result.paths.length > 0) {
+      completed.push("mockups");
+    } else if (!mockupOutcome.success) {
+      failedStages.push({ stage: "mockups", reason: mockupOutcome.error });
     }
 
-    // Stage 8: Pinterest (fire-and-forget)
-    void autoPromoteProduct(product.id)
-      .then(() => markDone("pinterest"))
-      .catch((err) => {
-        console.error("[build-pipeline] Pinterest failed (non-fatal):", err instanceof Error ? err.message : err);
-        markFailed("pinterest", err instanceof Error ? err.message : "Pinterest pin failed");
-      });
+    // Mark built before Etsy — product is complete regardless of publish outcome
+    await setBuildStatus(cardId, "built");
 
-    const completeness = Math.round((completed.length / TOTAL_STAGES) * 100);
-    const isPublished = completed.includes("publish");
+    // ── Stage 6: Etsy publish (required, 60s) ──────────────────────────────
+    const etsyOutcome = await runStage(
+      cardId, "etsy_publish", true, 60_000,
+      async () => publishProductToEtsy(productId)
+    );
+    if (!etsyOutcome.success) throw new Error("unreachable");
 
+    await setBuildStatus(cardId, "publishing");
     await prisma.launchCard.update({
       where: { id: cardId },
       data: {
-        buildStatus: isPublished ? "published" : "built",
+        etsyListingId: etsyOutcome.result.listingId,
+        buildStatus: "published",
+        publishedAt: new Date(),
+      },
+    });
+    completed.push("etsy_draft");
+    completed.push("publish");
+    console.log(`[build-pipeline] ✓ published — ${etsyOutcome.result.listingUrl}`);
+
+    // ── Stage 7: Pinterest (optional, fire-and-forget) ─────────────────────
+    void runStage<void>(cardId, "pinterest", false, 30_000, () => autoPromoteProduct(productId))
+      .then((r) => {
+        if (r.success) completed.push("pinterest");
+        else failedStages.push({ stage: "pinterest", reason: r.error });
+      })
+      .catch(() => {});
+
+    // ── Finalize ────────────────────────────────────────────────────────────
+    const completeness = Math.round((completed.length / TOTAL_STAGES) * 100);
+    await prisma.launchCard.update({
+      where: { id: cardId },
+      data: {
+        buildStatus: "published",
         buildCompletedAt: new Date(),
-        publishedAt: isPublished ? new Date() : null,
+        publishedAt: new Date(),
         buildCompleteness: completeness,
         stagesCompleted: completed as unknown as Prisma.InputJsonValue,
-        stagesFailed: failed as unknown as Prisma.InputJsonValue,
+        stagesFailed: failedStages as unknown as Prisma.InputJsonValue,
       },
     });
 
   } catch (err) {
+    // Required stage already set its failed_* status. Just save summary.
     const message = err instanceof Error ? err.message : "Build pipeline failed";
-    console.error(`[build-pipeline] Fatal error at stage "${currentStage}":`, message);
-    const failedStatus: BuildStatus = FAILED_STATUS[currentStage] ?? "failed";
+    console.error(`[build-pipeline] Fatal error:`, message);
     const completeness = Math.round((completed.length / TOTAL_STAGES) * 100);
     await prisma.launchCard.update({
       where: { id: cardId },
       data: {
-        buildStatus: failedStatus,
-        failureReason: message,
         buildCompleteness: completeness,
         stagesCompleted: completed as unknown as Prisma.InputJsonValue,
-        stagesFailed: [...failed, { stage: currentStage, reason: message }] as unknown as Prisma.InputJsonValue,
+        stagesFailed: [
+          ...failedStages,
+          { stage: "pipeline", reason: message },
+        ] as unknown as Prisma.InputJsonValue,
       },
-    });
+    }).catch(() => {});
     throw err;
   }
 }

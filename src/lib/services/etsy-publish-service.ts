@@ -17,16 +17,16 @@ export interface EtsyPublishResult {
 }
 
 // Etsy taxonomy IDs for digital product formats
-// Source: GET /v3/application/seller-taxonomy/nodes
+// Source: GET /v3/application/seller-taxonomy/nodes (verified 2026-06-11)
 const TAXONOMY_BY_FORMAT: Record<string, number> = {
-  journal: 354,       // Paper & Party Supplies > Paper > Calendars & Planners
-  planner: 354,
-  workbook: 354,
-  bundle: 354,
-  checklist: 1303,    // Paper & Party Supplies > Paper > Stationery
+  journal: 326,        // Books, Movies & Music > Books > Journals & Notebooks
+  planner: 326,
+  workbook: 326,
+  bundle: 326,
+  checklist: 1303,     // Paper & Party Supplies > Paper > Stationery
   template_pack: 1303,
   knowledge_guide: 6344, // Craft Supplies > Patterns & How To > Tutorials
-  game_sheet: 1347,   // Paper & Party Supplies > Party Supplies > Party Favors & Games
+  game_sheet: 1347,    // Paper & Party Supplies > Party Supplies > Party Favors & Games
   bingo_card: 1347,
 };
 
@@ -37,7 +37,6 @@ export async function publishProductToEtsy(productId: string): Promise<EtsyPubli
   });
 
   if (!product.pdfPath) throw new Error("Generate PDF first");
-  if (!product.coverImagePath) throw new Error("Generate cover image first");
 
   const { token, shopId, connectionId } = await getValidEtsyToken();
 
@@ -65,10 +64,12 @@ export async function publishProductToEtsy(productId: string): Promise<EtsyPubli
   const safeFilename = product.title.replace(/[^a-zA-Z0-9\s-]/g, "").replace(/\s+/g, "-").slice(0, 60);
   await uploadListingFile(token, shopId, listingId, Buffer.from(pdfBuffer), `${safeFilename}.pdf`);
 
-  const imgFilename = basename(product.coverImagePath!);
-  const imgBuffer = await readFile(join("/tmp", "product-images", imgFilename))
-    .catch(() => readFile(join(process.cwd(), "public", "product-images", imgFilename)));
-  await uploadListingImage(token, shopId, listingId, Buffer.from(imgBuffer), "cover.png");
+  if (product.coverImagePath) {
+    const imgFilename = basename(product.coverImagePath);
+    const imgBuffer = await readFile(join("/tmp", "product-images", imgFilename))
+      .catch(() => readFile(join(process.cwd(), "public", "product-images", imgFilename)));
+    await uploadListingImage(token, shopId, listingId, Buffer.from(imgBuffer), "cover.png");
+  }
 
   await activateListing(token, shopId, listingId);
 

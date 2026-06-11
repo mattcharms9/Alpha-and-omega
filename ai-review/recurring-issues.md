@@ -149,6 +149,49 @@ Do NOT add cron entries to STATUS.md for routes that haven't been built yet.
 
 ---
 
+## RI-013: External API Calls Without Timeout → Pipeline Freeze
+
+**First seen:** Session 034 (2026-06-11) — cover image stage freezing pipeline
+**Occurrences:** 2 (cover image AbortController missing, mockup Claude call missing timeout)
+
+**Pattern:** Calling an external API (OpenAI DALL-E, Anthropic Claude) inside a pipeline stage with no timeout. If the API is slow, rate-limited, or billing-paused, the call blocks indefinitely. The entire pipeline hangs. No error is thrown, no status is set, user sees the card stuck at "generating_cover" or "generating_mockups" forever.
+
+**Prevention:**
+- Every `openai.images.generate` call must have an `AbortController` with a timeout (30s max)
+- Every `claude.ts` call inside a pipeline stage should be wrapped with `Promise.race` + timeout
+- The pipeline's `runStage<T>` wrapper already adds an outer timeout — but inner calls can still silently eat the timeout budget without progressing
+
+---
+
+## RI-014: Optional Stage Throwing Instead of Returning `null/[]`
+
+**First seen:** Session 034 (2026-06-11) — `generateProductMockups` throwing on all-fail
+**Occurrences:** 1
+
+**Pattern:** An optional pipeline stage function throws when all attempts fail. The caller expects it to degrade gracefully (return empty/null), but gets an exception that propagates up and blocks the rest of the pipeline — including required stages that come after it.
+
+**Prevention:**
+- Functions used as optional pipeline stages must NEVER throw as their terminal behavior
+- `generateProductMockups`: return `{ paths: [] }` — never throw
+- `generateProductCoverImage`: wrap entire call in try/catch in the pipeline inner fn(), return null
+- Rule: optional stage inner fn() catches errors and returns null — `runStage` only sees a clean return
+
+---
+
+## RI-015: Cover Image Gate Blocking Etsy Publish
+
+**First seen:** Session 034 (2026-06-11)
+**Occurrences:** 1
+
+**Pattern:** `etsy-publish-service.ts` had `if (!product.coverImagePath) throw`. This means any pipeline run where DALL-E failed (rate limit, billing, timeout) would never reach the Etsy publish stage, even though the product's PDF was complete and an Etsy listing could be created without a cover image.
+
+**Prevention:**
+- The only hard requirement for Etsy publish is `pdfPath` (the digital download file)
+- Cover image upload should always be conditional: `if (product.coverImagePath) { uploadListingImage(...) }`
+- Never gate a required stage on the output of an optional stage
+
+---
+
 ## RI-012: @react-pdf/renderer Compatibility with Next.js App Router
 
 **First seen:** Session 012 (2026-05-27) — template build

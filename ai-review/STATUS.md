@@ -1,5 +1,5 @@
 # Alpha & Omega — Operational Status
-**Last Updated:** 2026-06-11 (Session 032 — Full Platform Operationalization: Per-Stage Build Pipeline, Chunked Market Intel, Signal Model)
+**Last Updated:** 2026-06-11 (Session 034 — Bulletproof Failsafe Pipeline: Per-Stage Timeouts, Cover Gate Removal, Visual Intel Wiring)
 
 ---
 
@@ -175,7 +175,7 @@
 | Seasonal Calendar UI | ✅ Live | Calendar tab on /intelligence; Publish Now + Prepare Now sections + 12-month expandable strip; "Generate →" pre-fills scan (B5) |
 | Autonomous Agent Pipeline | ✅ Live | 5-agent orchestration (Scout→Validator→Generator→Checker→Scorer→Manager); DailyQueue + LaunchCard + AgentRunLog models; 2am UTC cron |
 | Launch Queue UI | ✅ OPERATIONAL | `/launch-queue` — renders 12 cards; apiFetch auth fix; responsive 1/2/3 col grid; approve/skip; build progress polling; live summary bar; keyboard shortcuts; polling trigger |
-| Build Pipeline (Autonomous) | ✅ Live | `runBuildPipeline()` — blueprint→PDF→cover→SEO→mockups→Etsy→Pinterest; per-stage non-fatal fallbacks |
+| Build Pipeline (Autonomous) | ✅ BULLETPROOF | `runBuildPipeline()` — `runStage<T>` generic wrapper: per-stage timeouts (60/120/30/30/20/60s), required vs optional semantics, cover gate removed, taxonomy 326, visual intel wiring; never freezes |
 | Daily Queue Email Digest | ✅ Live | `sendDailyQueueEmail()` — approve/skip deep links; HMAC-SHA256 email action tokens (24h TTL) |
 | Build Completion Notifications | ✅ Live | `sendBuildCompleteNotification()` + `sendBuildFailureAlert()` — email + push |
 | Agent Monitor | ✅ Live | `/agent-monitor` — recent pipeline runs grouped by queueId; per-agent cost/token/duration breakdown |

@@ -412,6 +412,7 @@ export default function LaunchQueuePage() {
   const [toastMsg, setToastMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [learningContext, setLearningContext] = useState<string | null>(null);
   const [selectedCardIdx, setSelectedCardIdx] = useState(0);
+  const [approvingAll, setApprovingAll] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const loadQueue = useCallback(async () => {
@@ -551,9 +552,14 @@ export default function LaunchQueuePage() {
   }
 
   async function approveAllHighConfidence() {
-    const targets = queue?.cards.filter((c) => c.status === "pending" && c.confidenceLevel === "high" && c.opportunityScore >= 75) ?? [];
-    for (const card of targets) {
-      await decide(card.id, "approved");
+    const targets = queue?.cards.filter((c) => c.status === "pending" && c.confidenceLevel === "high") ?? [];
+    if (targets.length === 0) return;
+    setApprovingAll(true);
+    try {
+      await Promise.all(targets.map((card) => decide(card.id, "approved").catch(() => {})));
+      setToastMsg({ type: "success", text: `${targets.length} high-confidence product${targets.length === 1 ? "" : "s"} queued for building.` });
+    } finally {
+      setApprovingAll(false);
     }
   }
 
@@ -647,9 +653,10 @@ export default function LaunchQueuePage() {
           {pendingCount > 0 && (
             <button
               onClick={() => void approveAllHighConfidence()}
-              style={{ display: "flex", alignItems: "center", gap: 6, background: "var(--emerald)", color: "white", border: "none", borderRadius: "var(--radius-md)", padding: "0.5rem 1rem", fontSize: "0.8rem", fontWeight: 700, cursor: "pointer" }}
+              disabled={approvingAll}
+              style={{ display: "flex", alignItems: "center", gap: 6, background: approvingAll ? "var(--text-muted)" : "var(--emerald)", color: "white", border: "none", borderRadius: "var(--radius-md)", padding: "0.5rem 1rem", fontSize: "0.8rem", fontWeight: 700, cursor: approvingAll ? "not-allowed" : "pointer", opacity: approvingAll ? 0.7 : 1 }}
             >
-              <Zap size={13} /> Approve All High-Confidence
+              <Zap size={13} /> {approvingAll ? "Approving…" : "Approve All High-Confidence"}
             </button>
           )}
         </div>
