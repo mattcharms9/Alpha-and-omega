@@ -1,3 +1,6 @@
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
+
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db/prisma";
 import { toSafeErrorMessage } from "@/lib/errors";
@@ -60,6 +63,36 @@ export async function GET(req: NextRequest): Promise<NextResponse> {
       });
 
       return NextResponse.json({ success: true, data: { underpriced, overpriced, correct, total: results.length } });
+    }
+
+    if (action === "products") {
+      const cards = await prisma.launchCard.findMany({
+        where: { productId: { not: null } },
+        orderBy: { createdAt: "desc" },
+        take: 50,
+      });
+      const productIds = cards.map((c) => c.productId).filter((id): id is string => id !== null);
+      const products = await prisma.product.findMany({
+        where: { id: { in: productIds } },
+        select: { id: true, title: true, type: true, etsyListingUrl: true },
+      });
+      const productMap = new Map(products.map((p) => [p.id, p]));
+      const items = cards.map((c) => {
+        const product = c.productId ? productMap.get(c.productId) : null;
+        return {
+          cardId: c.id,
+          productId: c.productId ?? "",
+          title: product?.title ?? c.productTitle,
+          type: product?.type ?? c.productFormat,
+          buildStatus: c.buildStatus,
+          buildCompleteness: c.buildCompleteness,
+          stagesFailed: c.stagesFailed,
+          etsyListingUrl: product?.etsyListingUrl ?? null,
+          failureReason: c.failureReason,
+          publishedAt: c.publishedAt?.toISOString() ?? null,
+        };
+      });
+      return NextResponse.json({ success: true, data: items });
     }
 
     if (action === "revenue-summary") {

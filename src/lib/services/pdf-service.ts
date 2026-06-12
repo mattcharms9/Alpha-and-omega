@@ -1,12 +1,24 @@
 import React from "react";
 import { prisma } from "@/lib/db/prisma";
 import { buildBlueprintFromProduct } from "@/lib/pdf/build-blueprint";
-import { slugify } from "@/lib/pdf/slugify";
+import { getPdfPath } from "@/lib/utils/file-paths";
 import path from "path";
 import fs from "fs/promises";
 import type { DocumentProps } from "@react-pdf/renderer";
 
-export async function generateProductPdf(productId: string): Promise<{ pdfPath: string; fileName: string }> {
+async function uploadToBlob(buffer: Buffer, filename: string): Promise<string | null> {
+  if (!process.env.BLOB_READ_WRITE_TOKEN) return null;
+  try {
+    const { put } = await import("@vercel/blob");
+    const blob = await put(`pdfs/${filename}`, buffer, { access: "public" });
+    return blob.url;
+  } catch (err) {
+    console.warn("[pdf-service] Vercel Blob upload failed:", err instanceof Error ? err.message : "unknown");
+    return null;
+  }
+}
+
+export async function generateProductPdf(productId: string): Promise<{ pdfPath: string; fileName: string; pdfBlobUrl: string | null }> {
   const product = await prisma.product.findUniqueOrThrow({ where: { id: productId } });
   const blueprint = buildBlueprintFromProduct(product);
 
@@ -26,21 +38,37 @@ export async function generateProductPdf(productId: string): Promise<{ pdfPath: 
   }
 
   const element = React.createElement(TemplateComponent, { blueprint }) as React.ReactElement<DocumentProps>;
-  const pdfBuffer = await pdf(element).toBuffer();
+  const pdfBuffer = (await pdf(element).toBuffer()) as unknown as Buffer;
 
-  const fileName = `${slugify(product.title)}-${product.id.slice(-6)}.pdf`;
-
-  // Write to /tmp/ first (writable on Vercel). Also try public/ for local dev serving.
-  const tmpPath = path.join("/tmp", "product-pdfs", fileName);
+  // Write to /tmp (the only writable path on Vercel at runtime)
+  const tmpPath = getPdfPath(productId);
   await fs.mkdir(path.dirname(tmpPath), { recursive: true });
   await fs.writeFile(tmpPath, pdfBuffer);
 
-  const publicPath = path.join(process.cwd(), "public", "product-pdfs", fileName);
-  await fs.mkdir(path.dirname(publicPath), { recursive: true });
-  await fs.writeFile(publicPath, pdfBuffer).catch(() => {});
+  // Verify the file was actually written
+  const stat = await fs.stat(tmpPath).catch(() => null);
+  if (!stat || stat.size === 0) {
+    throw new Error("PDF file was not created — @react-pdf/renderer may have failed silently");
+  }
+  console.log(`[pdf-service] PDF written to /tmp: ${stat.size} bytes`);
+
+  // Determine filename for Etsy and blob storage
+  const { slugify } = await import("@/lib/pdf/slugify");
+  const fileName = `${slugify(product.title)}-${product.id.slice(-6)}.pdf`;
+
+  // Upload to Vercel Blob if token is configured (enables cross-invocation persistence)
+  const pdfBlobUrl = await uploadToBlob(pdfBuffer, fileName);
+  if (pdfBlobUrl) {
+    console.log(`[pdf-service] PDF uploaded to Vercel Blob: ${pdfBlobUrl}`);
+  } else {
+    console.log("[pdf-service] Vercel Blob not configured — PDF available in /tmp for this invocation only");
+  }
 
   const pdfPath = `/product-pdfs/${fileName}`;
-  await prisma.product.update({ where: { id: productId }, data: { pdfPath } });
+  await prisma.product.update({
+    where: { id: productId },
+    data: { pdfPath, ...(pdfBlobUrl ? { pdfBlobUrl } : {}) },
+  });
 
-  return { pdfPath, fileName };
+  return { pdfPath, fileName, pdfBlobUrl };
 }

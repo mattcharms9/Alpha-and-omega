@@ -953,3 +953,28 @@ function toJson<T>(val: T): Prisma.InputJsonValue {
 - Gallery stage adds up to 120s to pipeline per product (4 × 25s DALL-E calls). This is acceptable since it runs after publish and cannot block the listing going live.
 - `sanitizeForEtsy` converts "self-care" to "self, care" — this changes tag text but eliminates all hyphens as required. Etsy multi-word tags work without hyphens.
 - Direct visual intel cover prompts require a `MarketIntelligenceReport` in the last 48h for the primary keyword. Cold-start products fall back to the Claude plan path.
+
+---
+
+## ADR-040: /tmp Only Writes + Vercel Blob for Cross-Invocation File Persistence
+**Date:** 2026-06-11
+**Status:** Active
+
+**Decision:** All file writes in pipeline stages must go to `/tmp` only (never `/public` or `/var/task`). When `BLOB_READ_WRITE_TOKEN` is set, PDF and cover image buffers are also uploaded to Vercel Blob immediately after writing to /tmp. The blob URL is saved to `Product.pdfBlobUrl` / `Product.coverImageBlobUrl`. `etsy-publish-service.ts` reads files from blob URL first, then falls back to /tmp.
+
+**Rationale:**
+- Vercel Lambdas have a read-only filesystem at runtime except for `/tmp`. Writing to `/public/` fails silently — the file appears to write locally but doesn't survive deployment.
+- `/tmp` is per-invocation — each Lambda execution gets a fresh empty `/tmp`. A retry creates a new Lambda invocation, meaning files from the original invocation are unavailable. Without blob storage, every retry must re-run all prior stages.
+- Vercel Blob provides persistent, public URLs that survive across invocations. This enables smart retry (resumeFrom) to skip already-completed stages and read files via blob URL.
+
+**Key implementation details:**
+- `src/lib/utils/file-paths.ts` — canonical `TMP = "/tmp"` constant, `getPdfPath(id)`, `getCoverPath(id)`, `getMockupPath(id, index)`, `getGalleryPath(id, rank)`, `getBlueprintPath(id)` helper functions.
+- `prisma/schema.prisma` — `pdfBlobUrl String?` and `coverImageBlobUrl String?` added to `Product` model.
+- `pdf-service.ts` and `image-service.ts` — `uploadToBlob()` / `uploadCoverToBlob()` wrapped in try/catch, return null if token absent or upload fails. Blob failure never throws.
+- `etsy-publish-service.ts` — `fetchBuffer(blobUrl, tmpPath)` tries blob first (15s AbortController), logs on failure, falls back to `fs.readFile(tmpPath)`. This handles both the cross-invocation retry case and the same-invocation case.
+- `build-pipeline.ts` — `runBuildPipeline(cardId, resumeFrom?)` skips stages before `resumeFrom` index. Loads existing EtsyResult from DB if resuming after etsy_publish stage.
+
+**Trade-offs:**
+- Vercel Blob incurs storage/bandwidth cost. For PDFs (avg ~2MB), this is negligible at current scale.
+- Blob upload is conditional on `BLOB_READ_WRITE_TOKEN`. Without it, retries may need to re-run earlier stages. This is acceptable as a graceful degradation.
+- Blob URLs are public — anyone with the URL can access the PDF. Acceptable since the PDF is about to be sold publicly on Etsy anyway. For very sensitive future content, private blob with signed URLs would be needed.

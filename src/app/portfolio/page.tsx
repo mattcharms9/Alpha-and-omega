@@ -4,6 +4,7 @@ import { BarChart3, DollarSign, Package, TrendingUp, Star, Zap, Pin, Eye, Bookma
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card, CardBody } from "@/components/ui/Card";
 import { PortfolioCharts } from "@/components/portfolio/PortfolioCharts";
+import { ProductStatusList } from "@/components/portfolio/ProductStatusList";
 import { prisma } from "@/lib/db/prisma";
 import type { PortfolioStats } from "@/app/api/portfolio/route";
 
@@ -198,6 +199,8 @@ export default async function PortfolioPage() {
             </Card>
           )}
         </div>
+
+        <ProductStatusList />
       </div>
     </div>
   );

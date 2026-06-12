@@ -18,6 +18,7 @@ const DecideSchema = z.object({
 
 const RetrySchema = z.object({
   cardId: z.string().min(1),
+  resumeFrom: z.string().optional(),
 });
 
 export async function GET(req: NextRequest) {
@@ -203,12 +204,12 @@ export async function POST(req: NextRequest) {
       if (!body.success) {
         return NextResponse.json({ success: false, error: body.error.issues[0]?.message ?? "Invalid input" }, { status: 400 });
       }
-      const { cardId } = body.data;
+      const { cardId, resumeFrom } = body.data;
       await prisma.launchCard.update({
         where: { id: cardId },
         data: { buildStatus: "queued", failureReason: null },
       });
-      void runBuildPipeline(cardId).catch((err) => {
+      void runBuildPipeline(cardId, resumeFrom).catch((err) => {
         console.error("[launch-queue] Retry build failed:", err);
       });
       return NextResponse.json({ success: true, data: { message: "Build retry started", cardId } });

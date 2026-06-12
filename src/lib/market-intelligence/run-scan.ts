@@ -119,6 +119,31 @@ export async function runFullScan(startFrom = 0): Promise<ChunkResult> {
   const nextStart = startFrom + CHUNK_SIZE;
   const isComplete = nextStart >= TRACKED_NICHES.length;
 
+  // On final chunk, retry any niches that produced no report
+  if (isComplete) {
+    const completedReports = await prisma.marketIntelligenceReport.findMany({
+      where: { reportDate },
+      select: { niche: true },
+    });
+    const completedNiches = new Set(completedReports.map((r) => r.niche));
+    const missing = TRACKED_NICHES.filter((n) => !completedNiches.has(n));
+    if (missing.length > 0) {
+      console.log(`[market-intelligence] Retry pass — ${missing.length} niches missing reports: ${missing.join(", ")}`);
+      for (const niche of missing) {
+        try {
+          const { report } = await race(runNicheScan(niche, reportDate), 60_000, `retry(${niche})`);
+          if (report) {
+            results.push({ niche, opportunityScore: report.opportunityScore, competitionLevel: report.competitionLevel });
+            console.log(`[market-intelligence] ✓ retry ${niche} — score: ${report.opportunityScore}`);
+          }
+        } catch (err) {
+          console.warn(`[market-intelligence] Retry failed for "${niche}":`, err instanceof Error ? err.message : err);
+        }
+        await delay(300);
+      }
+    }
+  }
+
   // On final chunk, write market snapshot
   if (isComplete) {
     const allReports = await prisma.marketIntelligenceReport.findMany({

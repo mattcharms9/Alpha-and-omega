@@ -98,6 +98,21 @@ function stageIndex(buildStatus: string): number {
   return map[buildStatus] ?? -1;
 }
 
+// Maps a failed buildStatus → the stage name to pass as resumeFrom
+const FAILED_STATUS_TO_RESUME: Record<string, string> = {
+  failed_blueprinting:       "blueprint",
+  failed_generating_pdf:     "pdf",
+  failed_generating_cover:   "cover_image",
+  failed_optimizing_seo:     "seo",
+  failed_generating_mockups: "mockups",
+  failed_creating_listing:   "etsy_publish",
+  failed_publishing:         "etsy_publish",
+};
+
+function getResumeFrom(buildStatus: string): string | undefined {
+  return FAILED_STATUS_TO_RESUME[buildStatus];
+}
+
 // ── Confidence badge ───────────────────────────────────────────────────────────
 
 function ConfidenceBadge({ level }: { level: string }) {
@@ -540,6 +555,8 @@ export default function LaunchQueuePage() {
   }
 
   async function retryBuild(cardId: string) {
+    const card = queue?.cards.find((c) => c.id === cardId);
+    const resumeFrom = card ? getResumeFrom(card.buildStatus) : undefined;
     setQueue((prev) => {
       if (!prev) return prev;
       return { ...prev, cards: prev.cards.map((c) => c.id === cardId ? { ...c, buildStatus: "building", failureReason: null } : c) };
@@ -547,7 +564,7 @@ export default function LaunchQueuePage() {
     await apiFetch("/api/launch-queue?action=retry-build", {
       method: "POST",
       credentials: "include",
-      body: JSON.stringify({ cardId }),
+      body: JSON.stringify({ cardId, ...(resumeFrom ? { resumeFrom } : {}) }),
     });
   }
 
@@ -770,16 +787,42 @@ export default function LaunchQueuePage() {
         {cards.length > 0 && (
           <>
             <SummaryBar cards={cards} />
+
+            {/* Failed builds — shown above pending cards with red border */}
+            {cards.filter((c) => c.status === "approved" && c.buildStatus.startsWith("failed")).length > 0 && (
+              <div style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: "0.68rem", fontWeight: 700, color: "var(--rose)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10, display: "flex", alignItems: "center", gap: 6 }}>
+                  <AlertTriangle size={11} /> Failed Builds — Click Retry to Resume
+                </div>
+                <div className="lq-card-grid">
+                  {cards
+                    .filter((c) => c.status === "approved" && c.buildStatus.startsWith("failed"))
+                    .map((card) => (
+                      <div key={card.id} style={{ border: "2px solid var(--rose-border)", borderRadius: "var(--radius-lg)" }}>
+                        <LaunchCardView
+                          card={card}
+                          onApprove={(id) => void decide(id, "approved")}
+                          onSkip={(id) => void decide(id, "skipped")}
+                          onRetry={(id) => void retryBuild(id)}
+                        />
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+
             <div className="lq-card-grid">
-              {cards.map((card) => (
-                <LaunchCardView
-                  key={card.id}
-                  card={card}
-                  onApprove={(id) => void decide(id, "approved")}
-                  onSkip={(id) => void decide(id, "skipped")}
-                  onRetry={(id) => void retryBuild(id)}
-                />
-              ))}
+              {cards
+                .filter((c) => !(c.status === "approved" && c.buildStatus.startsWith("failed")))
+                .map((card) => (
+                  <LaunchCardView
+                    key={card.id}
+                    card={card}
+                    onApprove={(id) => void decide(id, "approved")}
+                    onSkip={(id) => void decide(id, "skipped")}
+                    onRetry={(id) => void retryBuild(id)}
+                  />
+                ))}
             </div>
             <StatsBar cards={cards} />
           </>

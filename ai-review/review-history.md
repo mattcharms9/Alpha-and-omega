@@ -4,6 +4,61 @@ Chronological log of all review sessions with findings and resolutions.
 
 ---
 
+## Session 036 — Complete System Repair: File Paths, Blob Storage, Smart Retry, Gallery Parallelism, Portfolio Status, maxDuration Audit
+**Date:** 2026-06-11
+**Focus:** Every product build must complete from blueprint to live Etsy listing with no manual intervention. 13-fix repair spec covering file path safety (no /public writes at runtime), Vercel Blob for cross-invocation persistence, smart retry resuming from failed stage, parallel DALL-E gallery generation, portfolio product status page, failed builds section in launch queue, maxDuration on missing routes, Etsy validation gate, blueprint sanitization, PDF verification, 3-attempt cover fallback, market intel retry pass.
+**Files Changed:** 11 files (file-paths.ts [new], ProductStatusList.tsx [new], pdf-service.ts [rewrite], image-service.ts [rewrite], gallery-service.ts [rewrite], etsy-publish-service.ts [rewrite], build-pipeline.ts [rewrite], launch-queue/route.ts, launch-queue/page.tsx, portfolio/route.ts, portfolio/page.tsx, run-scan.ts, +4 routes with maxDuration)
+**Build Status:** TSC clean, 0 errors, build passed.
+
+### What Changed and Why
+
+**1. File path safety — all writes to /tmp only (CRITICAL):**
+At Vercel runtime /public is read-only. Every write to `/public/` silently fails. `src/lib/utils/file-paths.ts` is the single source of truth for all temp file paths (`getPdfPath`, `getCoverPath`, `getMockupPath`, `getGalleryPath`, `getBlueprintPath`). `pdf-service.ts`, `image-service.ts`, `gallery-service.ts` all rewritten to use these helpers and write to /tmp only.
+
+**2. Vercel Blob for cross-invocation persistence (CRITICAL):**
+When a build fails and retries, the new Lambda invocation has an empty /tmp — previous files are lost. `pdf-service.ts` and `image-service.ts` now upload to Vercel Blob when `BLOB_READ_WRITE_TOKEN` is set. `pdfBlobUrl` and `coverImageBlobUrl` saved to Product record. `etsy-publish-service.ts` reads from blob URL first, then /tmp fallback. Blob upload failures are always swallowed — no throw.
+
+**3. Etsy listing validation gate (CRITICAL):**
+`etsy-publish-service.ts` now validates title (5-140 chars), description (100+ chars), tags (1-13 elements each ≤20 chars), price > 0, and warns if pdfBlobUrl is missing. Invalid listings throw before creating the draft — no wasted API calls.
+
+**4. Smart retry resuming from failed stage (HIGH):**
+`runBuildPipeline(cardId, resumeFrom?)` — stages before `resumeFrom` are skipped (using already-completed data from DB). `FAILED_STATUS_TO_RESUME` map in both `launch-queue/page.tsx` and `ProductStatusList.tsx` converts `failed_creating_listing` → `"etsy_publish"` etc. Retry button now passes `resumeFrom` automatically. EtsyResult pre-loaded from DB when resuming after etsy_publish stage.
+
+**5. Blueprint timeout increased to 120s, gallery timeout to 60s (HIGH):**
+Blueprint was timing out at 60s for complex 6-8 section products requiring 5-8 AI prompts. Now 120,000ms. Gallery stage changed from 120s to 60s now that images run in parallel.
+
+**6. Gallery DALL-E calls parallelized (HIGH):**
+4 images generated via `Promise.allSettled` instead of sequential loop. Max stage time reduced from ~100s to ~25s. All failures logged individually. Sequential Etsy uploads preserved for rate limit safety.
+
+**7. 3-attempt cover image fallback chain (HIGH):**
+Attempt 1: Visual intel prompt (30s). Attempt 2: Generic prompt (20s). If both fail: returns `{ path: "", blobUrl: null }` with console.warn — pipeline continues without cover image. Prevents cover failures from blocking publish.
+
+**8. PDF verification after write (MEDIUM):**
+`pdf-service.ts` calls `fs.stat()` after writing to /tmp. Throws "PDF file was not created" if size is 0 or file missing. Catches silent failures from `@react-pdf/renderer`.
+
+**9. Portfolio product status page (MEDIUM):**
+New `ProductStatusList` client component at `/components/portfolio/ProductStatusList.tsx` fetches `/api/portfolio?action=products` and renders per-product status badges (Live/Building/Failed/Not published using CSS variables only), buildCompleteness %, View on Etsy link, and Retry Build button. Added to portfolio page below Pinterest analytics.
+
+**10. Failed builds section in launch queue (MEDIUM):**
+Approved cards with failed buildStatus are separated into a "Failed Builds" section above the main grid with red border (var(--rose-border)). Each card shows with full retry capability. Main grid filters out failed cards to prevent duplication.
+
+**11. maxDuration audit — 4 routes missing (MEDIUM):**
+Added `export const maxDuration = 300; export const dynamic = "force-dynamic"` to `/api/etsy/publish`, `/api/pdf`, `/api/generate-image`, and `/api/portfolio`. These routes do synchronous AI/PDF/image work that would hit the 10s default Vercel limit.
+
+**12. Market intelligence scan retry pass (LOW):**
+After all niches are processed, `runFullScan` now checks which TRACKED_NICHES have no report for today and retries them with a 60s timeout per niche. Improves coverage when the first pass times out on some niches.
+
+**13. Blueprint sanitization (MEDIUM):**
+`build-pipeline.ts` now applies `sanitizeForEtsy` to product title and all section names before saving to DB. This prevents em dashes from entering the product record, which would later reach the Etsy API even if sanitized at publish time.
+
+### TypeScript Issues Fixed
+- `image-service.ts`: openai parameter typed as `OpenAI` (import type) instead of complex ReturnType chain
+- `build-pipeline.ts`: safeSections map parameter implicit type inference instead of explicit index signature annotation
+- `pdf-service.ts`: `toBuffer()` returns `ReadableStream` type in newer @react-pdf/renderer — cast to `Buffer` at call site
+- `portfolio/route.ts`: `LaunchCard` has no `product` include — replaced with two queries + Map join
+
+---
+
 ## Session 035 — Compounding Pipeline: Gallery, Visual Intel Covers, Sale Learning Loop, Pinterest Token Fix, Weekly Intelligence Email, Em-Dash Enforcement
 **Date:** 2026-06-11
 **Focus:** Make every published product more likely to sell than the last, and every sale improve tomorrow's products. Ten-part spec: sanitizer utility, gallery service (4 DALL-E images at ranks 2-5), visual intel cover wiring, sale learning loop via LearningEntry model, Pinterest stage using refreshed token, 6-section weekly intelligence email, em-dash enforcement across all AI prompts, tsc + build + E2E tests.
